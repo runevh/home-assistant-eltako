@@ -1,8 +1,8 @@
 """Representation of an Eltako device."""
 from datetime import datetime
 
-from eltakobus.message import ESP2Message, EltakoWrappedRPS, EltakoWrapped1BS, EltakoWrapped4BS, RPSMessage, Regular4BSMessage, Regular1BSMessage, prettify
-from eltakobus.util import AddressExpression, b2s
+from eltakobus.message import ESP2Message, EltakoWrappedRPS, EltakoWrapped1BS, EltakoWrapped4BS, RPSMessage, Regular4BSMessage, Regular1BSMessage
+from eltakobus.util import AddressExpression
 from eltakobus.eep import EEP
 
 from homeassistant.core import HomeAssistant, State
@@ -35,20 +35,21 @@ class EltakoEntity(Entity):
         self._attr_dev_name = config_helpers.get_device_name(dev_name, dev_id, self.general_settings)
         self._attr_dev_eep = dev_eep
         self.listen_to_addresses = []
-        
-        # calculate external address
-        if self.dev_id.is_local_address():
-            self._external_dev_id = self.dev_id.add(self.gateway.base_id)
-        else:
-            self._external_dev_id = self.dev_id
-
-        self.listen_to_addresses.append( self._external_dev_id[0] )
-
+        self.listen_to_addresses.append(self.dev_id[0])
         self.description_key = description_key
-        self._attr_unique_id = config_helpers.get_device_id(gateway.dev_id, self.dev_id, self._get_description_key())
+        self._attr_unique_id = EltakoEntity._get_identifier(self.gateway, self.dev_id, self._get_description_key())
         self.entity_id = f"{self._attr_ha_platform}.{self._attr_unique_id}"
 
         LOGGER.debug(f"[{self._attr_ha_platform} {self.dev_id}] Added entity {self.dev_name} ({type(self).__name__}).")
+
+    @classmethod
+    def _get_identifier(cls, gateway: EnOceanGateway, dev_id: AddressExpression, description_key:str=None) -> str:
+        if description_key is None:
+            description_key = ''
+        else:
+            description_key = '_'+description_key
+
+        return f"{DOMAIN}_gw{gateway.dev_id}_{config_helpers.format_address(dev_id)}{description_key}".replace(' ', "_").replace('-', '_').lower()
 
     def _get_description_key(self, description_key:str=None):
         if description_key is not None:
@@ -65,7 +66,7 @@ class EltakoEntity(Entity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={
-                (DOMAIN, b2s(self.dev_id) )
+                (DOMAIN, config_helpers.format_address(self.dev_id) )
             },
             name=self.dev_name,
             manufacturer=MANUFACTURER,
@@ -77,16 +78,18 @@ class EltakoEntity(Entity):
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
         await super().async_added_to_hass()
-
+        
         # Register callbacks.
+        event_id = config_helpers.get_bus_event_type(self.gateway.base_id, SIGNAL_RECEIVE_MESSAGE)
         self.async_on_remove(
             async_dispatcher_connect(
-                self.hass, ELTAKO_GLOBAL_EVENT_BUS_ID, self._message_received_callback
+                self.hass, event_id, self._message_received_callback
             )
         )
 
         # load initial value
         if isinstance(self, RestoreEntity):
+
             # check if value is not set
             is_value_available = getattr(self, '_attr_native_value', None)
             if is_value_available is None:
@@ -101,7 +104,7 @@ class EltakoEntity(Entity):
 
     def load_value_initially(self, latest_state:State):
         """This function is implemented in the concrete devices classes"""
-        LOGGER.warning(f"[{self._attr_ha_platform} {self.dev_id}] DOES NOT HAVE AN IMPLEMENTATION FOR: load_value_initially()")
+        LOGGER.warn(f"[{self._attr_ha_platform} {self.dev_id}] DOES NOT HAVE AN IMPLEMENTATION FOR: load_value_initially()")
         LOGGER.debug(f"[{self._attr_ha_platform} {self.dev_id}] latest state - state: {latest_state.state}")
         LOGGER.debug(f"[{self._attr_ha_platform} {self.dev_id}] latest state - attributes: {latest_state.attributes}")
         
@@ -119,10 +122,6 @@ class EltakoEntity(Entity):
         if sender_id is not None:
             return self.gateway.validate_sender_id(self.sender_id, self.dev_name)
         return True
-
-    @property
-    def external_dev_id(self) -> str:
-        return b2s(self._external_dev_id)
 
     @property
     def dev_name(self) -> str:
@@ -148,26 +147,24 @@ class EltakoEntity(Entity):
     def dev_id(self) -> AddressExpression:
         """Return the id of device."""
         return self._attr_dev_id
+
+    # @property
+    # def identifier(self) -> str:
+    #     """Return the identifier of device."""
+    #     return EltakoEntity._get_identifier(self.gateway, self.dev_id, self.description_key)
     
     @property
     def unique_id(self) -> str:
         """Return the unique id of device"""
-        return self._attr_unique_id
+        return EltakoEntity._get_identifier(self.gateway, self.dev_id, self.description_key)
 
-    def _message_received_callback(self, data: dict) -> None:
+    def _message_received_callback(self, msg: ESP2Message) -> None:
         """Handle incoming messages."""
-        msg = data['esp2_msg']
-
+        
         msg_types = [EltakoWrappedRPS, EltakoWrapped1BS, EltakoWrapped4BS, RPSMessage, Regular1BSMessage, Regular4BSMessage]
 
         if type(msg) in msg_types:
-            adr = AddressExpression((msg.address, None))
-            if adr.is_local_address():
-                adr = adr.add(self.gateway.base_id)
-
-            # LOGGER.debug(f"[{self.platform} {self.dev_id}] check if message address {b2s(msg.address)} is in registered list {', '.join([b2s(a) for a in self.listen_to_addresses])}")
-            if adr[0] in self.listen_to_addresses:
-                ## TODO: filter out message sent twice through other gateways
+            if msg.address in self.listen_to_addresses:
                 self.value_changed(msg)
 
 
@@ -176,7 +173,7 @@ class EltakoEntity(Entity):
     
     def send_message(self, msg: ESP2Message):
         """Put message on RS485 bus. First the message is put onto HA event bus so that other automations can react on messages."""
-        event_id = config_helpers.get_bus_event_type(self.gateway.dev_id, SIGNAL_SEND_MESSAGE)
+        event_id = config_helpers.get_bus_event_type(self.gateway.base_id, SIGNAL_SEND_MESSAGE)
         dispatcher_send(self.hass, event_id, msg)
         
 

@@ -20,10 +20,8 @@ ERROR_NO_GATEWAY_CONFIGURATION_AVAILABLE: Final = "No gateway configuration avai
 
 SIGNAL_RECEIVE_MESSAGE: Final = "receive_message"
 SIGNAL_SEND_MESSAGE: Final = "send_message"
-SIGNAL_SEND_MESSAGE_SERVICE: Final = "send_message_service"
 EVENT_BUTTON_PRESSED: Final = "btn_pressed"
 EVENT_CONTACT_CLOSED: Final = "contact_closed"
-ELTAKO_GLOBAL_EVENT_BUS_ID: Final = "eltako_global_event_bus"
 EVENT_CLIMATE_PRIORITY_SELECTED: Final = "climate_priority_selected"
 
 LOGGER: Final = logging.getLogger(DOMAIN)
@@ -58,10 +56,6 @@ CONF_MIN_TARGET_TEMPERATURE: Final = "min_target_temperature"
 CONF_ROOM_THERMOSTAT: Final = "thermostat"
 CONF_COOLING_MODE: Final = "cooling_mode"
 
-CONF_VIRTUAL_NETWORK_GATEWAY: Final = "Virtual ESP2 Reverse Network Bridge"
-
-CONF_GATEWAY_DESCRIPTION_PATTERN: Final = ""
-
 CONF_ID_REGEX: Final = "^([0-9a-fA-F]{2})-([0-9a-fA-F]{2})-([0-9a-fA-F]{2})-([0-9a-fA-F]{2})( (left|right))?$"
 CONF_METER_TARIFFS: Final = "meter_tariffs"
 CONF_TIME_CLOSES: Final = "time_closes"
@@ -83,34 +77,20 @@ PLATFORMS: Final = [
     Platform.COVER,
     Platform.CLIMATE,
     Platform.BUTTON,
-    Platform.SELECT
+    Platform.SELECT,
 ]
-
 
 class GatewayDeviceType(str, Enum):
     GatewayEltakoFAM14 = 'fam14'
     GatewayEltakoFGW14USB = 'fgw14usb'
     GatewayEltakoFAMUSB = 'fam-usb'     # ESP2 transceiver: https://www.eltako.com/en/product/professional-standard-en/three-phase-energy-meters-and-one-phase-energy-meters/fam-usb/
-    EltakoFTD14 = 'ftd14'
-    EnOceanUSB300 = 'enocean-usb300'
+    EnOceanUSB300 = 'enocean-usb300'    # not yet supported
     EltakoFAM14 = 'fam14'
     EltakoFGW14USB = 'fgw14usb'
     EltakoFAMUSB = 'fam-usb'
     USB300 = 'enocean-usb300'
     ESP3 = 'esp3-gateway'
-    LAN = 'lan'
-    MGW_LAN = 'mgw-lan'
-    EUL_LAN = 'eul_lan'
-    LAN_ESP2 = "lan-gw-esp2"
-    VirtualNetworkAdapter = 'esp2-network-reverse-bridge'   # subtype of LAN_ESP2
-
-    @classmethod
-    def indexOf(cls, value):
-        return list(cls).index(value)
-    
-    @classmethod
-    def get_by_index(cls, index):
-        return list(cls)[index]
+    LAN = 'mgw-lan'
 
     @classmethod
     def find(cls, value):
@@ -121,8 +101,7 @@ class GatewayDeviceType(str, Enum):
 
     @classmethod
     def is_transceiver(cls, dev_type) -> bool:
-        return dev_type in [GatewayDeviceType.GatewayEltakoFAMUSB, GatewayDeviceType.EnOceanUSB300, GatewayDeviceType.USB300, GatewayDeviceType.ESP3, GatewayDeviceType.LAN, 
-                            GatewayDeviceType.LAN_ESP2, GatewayDeviceType.MGW_LAN, GatewayDeviceType.EUL_LAN]
+        return dev_type in [GatewayDeviceType.GatewayEltakoFAMUSB, GatewayDeviceType.EnOceanUSB300, GatewayDeviceType.USB300, GatewayDeviceType.ESP3]
 
     @classmethod
     def is_bus_gateway(cls, dev_type) -> bool:
@@ -132,12 +111,11 @@ class GatewayDeviceType(str, Enum):
     @classmethod
     def is_esp2_gateway(cls, dev_type) -> bool:
         return dev_type in [GatewayDeviceType.GatewayEltakoFAM14, GatewayDeviceType.GatewayEltakoFGW14USB, GatewayDeviceType.GatewayEltakoFAMUSB, 
-                            GatewayDeviceType.EltakoFAM14, GatewayDeviceType.EltakoFAMUSB, GatewayDeviceType.EltakoFGW14USB, GatewayDeviceType.LAN_ESP2, 
-                            GatewayDeviceType.VirtualNetworkAdapter]
+                            GatewayDeviceType.EltakoFAM14, GatewayDeviceType.EltakoFAMUSB, GatewayDeviceType.EltakoFGW14USB]
     
     @classmethod
     def is_lan_gateway(cls, dev_type) -> bool:
-        return dev_type in [GatewayDeviceType.LAN, GatewayDeviceType.LAN_ESP2, GatewayDeviceType.MGW_LAN, GatewayDeviceType.EUL_LAN, GatewayDeviceType.VirtualNetworkAdapter]
+        return dev_type in [GatewayDeviceType.LAN]
 
 BAUD_RATE_DEVICE_TYPE_MAPPING: dict = {
     GatewayDeviceType.GatewayEltakoFAM14: 57600,
@@ -150,8 +128,4 @@ BAUD_RATE_DEVICE_TYPE_MAPPING: dict = {
     GatewayDeviceType.USB300: 57600,
     GatewayDeviceType.ESP3: 57600,
     GatewayDeviceType.LAN: -1,
-    GatewayDeviceType.LAN_ESP2: -1,
-    GatewayDeviceType.MGW_LAN: -1,
-    GatewayDeviceType.EUL_LAN: -1,
-    GatewayDeviceType.VirtualNetworkAdapter: -1,
 }

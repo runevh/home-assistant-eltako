@@ -85,8 +85,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         # LOGGER.debug(f"[cover {self.dev_id}] latest state: {latest_state.state}")
         # LOGGER.debug(f"[cover {self.dev_id}] latest state attributes: {latest_state.attributes}")
         try:
-            self._attr_current_cover_position = latest_state.attributes['current_position']
-            self._attr_current_cover_tilt_position = latest_state.attributes['current_tilt_position']
+            self._attr_current_cover_position = latest_state.attributes.get('current_position')
+            self._attr_current_cover_tilt_position = latest_state.attributes.get('current_tilt_position')
 
             #if self._attr_current_cover_tilt_position == 0:
             #    self._attr_current_cover_tilt_position = 0
@@ -117,7 +117,7 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
             self._attr_is_opening = None
             self._attr_is_closing = None
             self._attr_is_closed = None # means undefined state
-            raise e
+            # raise e
         
         self.schedule_update_ha_state()
         LOGGER.debug(f"[cover {self.dev_id}] value initially loaded: [" 
@@ -143,7 +143,7 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
             self.send_message(msg)
 
         else:
-            LOGGER.warning("[%s %s] Sender EEP %s not supported.", Platform.COVER, str(self.dev_id), self._sender_eep.eep_string)
+            LOGGER.warn("[%s %s] Sender EEP %s not supported.", Platform.COVER, str(self.dev_id), self._sender_eep.eep_string)
             return
         
         #TODO: ... setting state should be comment out
@@ -169,7 +169,7 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
             self.send_message(msg)
 
         else:
-            LOGGER.warning("[%s %s] Sender EEP %s not supported.", Platform.COVER, str(self.dev_id), self._sender_eep.eep_string)
+            LOGGER.warn("[%s %s] Sender EEP %s not supported.", Platform.COVER, str(self.dev_id), self._sender_eep.eep_string)
             return
         
         #TODO: ... setting state should be comment out
@@ -215,7 +215,7 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
             self.send_message(msg)
 
         else:
-            LOGGER.warning("[%s %s] Sender EEP %s not supported.", Platform.COVER, str(self.dev_id), self._sender_eep.eep_string)
+            LOGGER.warn("[%s %s] Sender EEP %s not supported.", Platform.COVER, str(self.dev_id), self._sender_eep.eep_string)
             return
         
         if self.general_settings[CONF_FAST_STATUS_CHANGE]:

@@ -1,13 +1,15 @@
 """Support for Eltako sensors."""
 from __future__ import annotations
 
-from typing import List
 from dataclasses import dataclass
 from datetime import datetime
 
 from eltakobus.util import AddressExpression, b2s
 from eltakobus.eep import *
 from eltakobus.message import ESP2Message
+
+from . import config_helpers
+
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -44,8 +46,6 @@ from .config_helpers import *
 from .gateway import EnOceanGateway
 from .const import *
 from . import get_gateway_from_hass, get_device_config_for_gateway
-from . import config_helpers
-from .virtual_network_gateway import VirtualNetworkGateway
 
 DEFAULT_DEVICE_NAME_WINDOW_HANDLE = "Window handle"
 DEFAULT_DEVICE_NAME_WEATHER_STATION = "Weather station"
@@ -417,17 +417,10 @@ async def async_setup_entry(
 
     # add gateway information
     entities.append(GatewayInfoField(platform, gateway, "Id", str(gateway.dev_id), "mdi:identifier"))
-    
-    if gateway.dev_type is not GatewayDeviceType.VirtualNetworkAdapter:
-        entities.append(GatewayBaseId(platform, gateway))
-
-    if GatewayDeviceType.is_lan_gateway(gateway.dev_type):
-        entities.append(GatewayInfoField(platform, gateway, "Address", f"{gateway.serial_path}:{gateway.port}", "mdi:usb"))
-    else:
-        entities.append(GatewayInfoField(platform, gateway, "Serial Path", gateway.serial_path, "mdi:usb"))
-        entities.append(GatewayInfoField(platform, gateway, "Message Delay", gateway.message_delay, "mdi:av-timer"))
-        
+    entities.append(GatewayInfoField(platform, gateway, "Base Id", b2s(gateway.base_id[0]), "mdi:identifier"))
+    entities.append(GatewayInfoField(platform, gateway, "Serial Path", gateway.serial_path, "mdi:usb"))
     entities.append(GatewayInfoField(platform, gateway, "USB Protocol", gateway.native_protocol, "mdi:usb"))
+    entities.append(GatewayInfoField(platform, gateway, "Message Delay", gateway.message_delay, "mdi:av-timer"))
     entities.append(GatewayInfoField(platform, gateway, "Auto Connect Enabled", gateway.is_auto_reconnect_enabled, "mdi:connection"))
     entities.append(GatewayLastReceivedMessage(platform, gateway))
     entities.append(GatewayReceivedMessagesInActiveSession(platform, gateway))
@@ -861,7 +854,7 @@ class GatewayLastReceivedMessage(EltakoSensor):
 
     def __init__(self, platform: str, gateway: EnOceanGateway):
         super().__init__(platform, gateway,
-                         dev_id=AddressExpression.parse('00-00-00-00'), 
+                         dev_id=gateway.base_id, 
                          dev_name="Last Message Received", 
                          dev_eep=None,
                          description=EltakoSensorEntityDescription(
@@ -906,7 +899,7 @@ class GatewayReceivedMessagesInActiveSession(EltakoSensor):
 
     def __init__(self, platform: str, gateway: EnOceanGateway):
         super().__init__(platform, gateway,
-                         dev_id=AddressExpression.parse('00-00-00-00'), 
+                         dev_id=gateway.base_id, 
                          dev_name="Received Messages per Session", 
                          dev_eep=None,
                          description=EltakoSensorEntityDescription(
@@ -915,7 +908,7 @@ class GatewayReceivedMessagesInActiveSession(EltakoSensor):
                             state_class=SensorStateClass.TOTAL_INCREASING,
                             # device_class=SensorDeviceClass.VOLUME,
                             # native_unit_of_measurement="Messages", # => raises error message
-                            unit_of_measurement="count",
+                            unit_of_measurement="Messages",
                             suggested_unit_of_measurement="Messages",
                             icon="mdi:chart-line",
                         )
@@ -949,43 +942,6 @@ class GatewayReceivedMessagesInActiveSession(EltakoSensor):
         self.schedule_update_ha_state()
 
 
-class GatewayBaseId(EltakoSensor):
-    """"Displays base id of gateway."""
-
-    def __init__(self, platform: str, gateway: EnOceanGateway):
-        super().__init__(platform, gateway,
-                         dev_id=AddressExpression.parse('00-00-00-00'), 
-                         dev_name="Base Id", 
-                         dev_eep=None,
-                         description=EltakoSensorEntityDescription(
-                            key="Base Id",
-                            name="Base Id",
-                            icon="mdi:identifier",
-                            has_entity_name= True,
-                        ) )
-        self._attr_name = "Base Id"
-        
-        self.gateway.add_base_id_change_handler( self.async_value_changed )
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return the device info."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.gateway.serial_path)},
-            name= self.gateway.dev_name,
-            manufacturer=MANUFACTURER,
-            model=self.gateway.model,
-            via_device=(DOMAIN, self.gateway.serial_path)
-        )
-
-    async def async_value_changed(self, base_id: AddressExpression) -> None:
-        """Update the current value."""
-
-        if isinstance(base_id, AddressExpression):
-            self.native_value = b2s(base_id)
-            self.schedule_update_ha_state()
-
-
 class StaticInfoField(EltakoSensor):
     """Key value fields for gateway information"""
 
@@ -1007,29 +963,13 @@ class StaticInfoField(EltakoSensor):
     def value_changed(self, value) -> None:
         pass
 
-class VirtGWInfoField(SensorEntity):
-    """Key value fields for gateway information"""
-
-    def __init__(self, platform: str, virt_gw: VirtualNetworkGateway, key:str, value:str, icon:str=None):
-        super().__init__()
-        self.virt_gw = virt_gw
-
-        self._attr_name = "Address"
-        self._attr_native_value = "homeassistant.local:"+str(virt_gw.port)
-        
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return the device info."""
-        return self.virt_gw
-
-
 class GatewayInfoField(StaticInfoField):
     """Key value fields for gateway information"""
 
     def __init__(self, platform: str, gateway: EnOceanGateway, key:str, value:str, icon:str=None):
         super().__init__(platform, 
                          gateway,
-                         dev_id=AddressExpression.parse('00-00-00-00'),
+                         dev_id=gateway.base_id, 
                          dev_name=key, 
                          dev_eep=None,
                          key=key,
@@ -1068,7 +1008,7 @@ class EventListenerInfoField(EltakoSensor):
         self._attr_native_value = ''
         self.listen_to_addresses.clear()
 
-        LOGGER.debug(f"[{platform}] [{EventListenerInfoField.__name__}] [{b2s(dev_id)}] [{key}] Register event: {event_id}")
+        LOGGER.debug(f"[{platform}] [{EventListenerInfoField.__name__}] [{b2s(dev_id[0])}] [{key}] Register event: {event_id}")
         self.hass.bus.async_listen(event_id, self.value_changed)
 
     
