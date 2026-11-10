@@ -22,6 +22,7 @@ from ..const import (BAUD_RATE_DEVICE_TYPE_MAPPING, CONF_BASE_ID, CONF_CORE_ENTR
                      OLD_GATEWAY_DEFAULT_NAME, PANEL_ICON, PANEL_JS_FILE, PANEL_STATIC_URL, PANEL_TITLE,
                      PANEL_URL_PATH, PANEL_WEBCOMPONENT, PLATFORMS)
 
+from .entity_migration import async_migrate_legacy_entities
 from .virtual_network_gateway import VirtualNetworkGateway, VIRT_GW_PORT
 from .websocket import register_websockets
 from . import onboarding
@@ -526,6 +527,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     gateway_base_id = AddressExpression.parse(gateway_conf[CONF_BASE_ID])
     message_delay = gateway_conf.get(CONF_GATEWAY_MESSAGE_DELAY, None)
     LOGGER.debug(f"[{LOG_PREFIX_INIT}] id: {gateway_id}, device type: {gateway_device_type}, serial path: {gateway_serial_path}, baud rate: {baud_rate}, base id: {gateway_base_id}")
+
+    async_migrate_legacy_entities(hass, config_entry.entry_id, gateway_id)
 
     if is_simulated:
         # no port and no socket is opened: the devices behind this gateway are simulated in

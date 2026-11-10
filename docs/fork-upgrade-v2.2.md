@@ -55,12 +55,27 @@ and an omitted message delay passed as None into the serial library. Both were
 fixed and deployed. The gateway reports connected and panel JavaScript returns
 HTTP 200. The integration suite runs 1,607 tests successfully (one skipped).
 
-The extended test is left running at the owner's request, without a timed
-rollback. A separate pre-test backup and rollback script are retained on the
-Home Assistant host in `/share/eltako-extended-test-20261110`.
-Existing heating automations still reference unavailable v1 entity IDs; entity
-migration remains unresolved. Authenticated visual panel behavior and actuator
-control await manual testing. This is not yet a successful full migration.
+The extended test was subsequently stopped and v1.5.10 restored after the owner
+requested preservation of existing heating behavior. Heating feedback and priority
+restoration were observed in the restored integration's logs.
+
+A migration now translates v1 unique IDs before gateway platforms start, while
+retaining existing entity IDs, registry identities and user settings. This covers
+local and radio device addresses and suffixes. It checks all mappings for conflicts
+before applying changes and refuses ambiguous duplicate entries rather than
+silently choosing one. Repeated migration is a no-op.
+
+An offline check using the actual Home Assistant 2026.3.4 registry and the owner's
+285 Eltako identities preserved every entity ID and disabled setting. All four
+heating targets referenced by the current automations resolve after migration.
+Regression tests also verify that v2 registration reuses the original registry
+entry rather than creating a duplicate. The migration is not yet deployed live.
+
+Before leaving a future upgrade running, verify the original heating entities
+are available, issue a temperature command and confirm actuator feedback, and
+check priority/preset behavior and existing lighting/cover controls. A successful
+registry migration alone does not prove physical control or USB reliability.
+The pre-test backups remain at `/share/eltako-extended-test-20261110` on the host.
 
 ## Validation
 
