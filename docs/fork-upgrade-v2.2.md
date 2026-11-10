@@ -49,8 +49,18 @@ stopped and v1.5.10 restored, including the original registries. Integration and
 configuration checksums matched the backup, and incoming bus messages resumed.
 
 The ID parser now accepts both description formats, with regression tests.
-This correction has not been retested live. Authenticated visual panel behavior
-and actuator control remain unverified; this was not a successful full migration.
+A subsequent extended live test confirmed the parser fix and exposed two further
+startup failures: an unsupported `via_device_id` DeviceInfo field on HA 2026.3.4,
+and an omitted message delay passed as None into the serial library. Both were
+fixed and deployed. The gateway reports connected and panel JavaScript returns
+HTTP 200. The integration suite runs 1,607 tests successfully (one skipped).
+
+The extended test is left running at the owner's request, without a timed
+rollback. A separate pre-test backup and rollback script are retained on the
+Home Assistant host in `/share/eltako-extended-test-20261110`.
+Existing heating automations still reference unavailable v1 entity IDs; entity
+migration remains unresolved. Authenticated visual panel behavior and actuator
+control await manual testing. This is not yet a successful full migration.
 
 ## Validation
 
