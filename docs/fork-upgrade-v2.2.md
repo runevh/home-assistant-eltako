@@ -132,3 +132,13 @@ Manual panel interaction and physical setpoint/actuator confirmation remain
 pending. Keep the PR in draft until these checks pass. This test's rollback
 snapshot is `/share/eltako-feedback-retest-20261110`; it includes the renamed
 `gw_1` configuration. The feature branch has not been merged.
+
+## Persistent Home Assistant heating priority
+
+Climate configuration supports `home_assistant_priority: true`. It selects the
+HOME_AUTOMATION command priority (0x08) on every temperature command, including
+periodic updates, and ignores priority-selection events that would override the
+configured policy. Omit it to retain device-specific defaults. The owner requested
+this policy for all 12 installed heating zones. It does not bypass actuator frost
+protection, window contacts or other hardware safety behavior. Physical confirmation
+of the requested setpoint remains necessary.

@@ -36,7 +36,7 @@ class EventDataMock():
         self.data = d
 
 def create_climate_entity(thermostat:DeviceConf=None, cooling_switch:DeviceConf=None,
-                          room_sensor: str = None, off_temperature: float = None, address: str = "00-00-00-01"):
+                          room_sensor: str = None, off_temperature: float = None, address: str = "00-00-00-01", home_assistant_priority: bool = False):
     gw = GatewayMock(dev_id=12345)
     dev_id = AddressExpression.parse(address) # heating cooling actuator
     dev_name = "Room 1"
@@ -49,7 +49,7 @@ def create_climate_entity(thermostat:DeviceConf=None, cooling_switch:DeviceConf=
 
     cc = ClimateController(Platform.CLIMATE, gw, dev_id, dev_name, dev_eep, sender_id,
                            sender_eep, temp_unit, min_temp, max_temp, thermostat,
-                           cooling_switch, None, None, room_sensor, off_temperature)
+                           cooling_switch, None, None, room_sensor, off_temperature, home_assistant_priority)
     return cc
 
 class TestClimate(unittest.TestCase):
@@ -373,3 +373,23 @@ class TestWiredSetpointCommands(unittest.IsolatedAsyncioTestCase):
             await cc.async_set_temperature(temperature=20)
         self.assertEqual(send.call_args.args[0].data[3], A5_10_06.ControllerPriority.HOME_AUTOMATION.code)
         self.assertEqual(send.call_args.args[0].data[0], A5_10_06.HeaterMode.NORMAL.value)
+
+
+class TestForcedHomeAssistantPriority(unittest.IsolatedAsyncioTestCase):
+    async def test_priority_survives_events_and_all_temperature_commands(self):
+        cc = create_climate_entity(home_assistant_priority=True)
+        self.assertEqual(cc._attr_priority, A5_10_06.ControllerPriority.HOME_AUTOMATION)
+        await cc.async_handle_priority_events(EventDataMock({'priority': 'Thermostat'}))
+        self.assertEqual(cc._attr_priority, A5_10_06.ControllerPriority.HOME_AUTOMATION)
+        with mock.patch.object(cc, 'send_message') as send:
+            await cc.async_set_temperature(temperature=18)
+            self.assertEqual(send.call_args.args[0].data[3], 0x08)
+            cc._send_command(A5_10_06.HeaterMode.NORMAL, 10, A5_10_06.ControllerPriority.AUTO)
+            self.assertEqual(send.call_args.args[0].data[3], 0x08)
+
+    def test_schema_preserves_priority_setting(self):
+        from custom_components.eltako.const import CONF_HOME_ASSISTANT_PRIORITY
+        node = {CONF_ID: '00-00-00-4A', CONF_EEP: 'A5-10-06',
+                CONF_SENDER: {CONF_ID: '00-00-B0-4A', CONF_EEP: 'A5-10-06'},
+                CONF_HOME_ASSISTANT_PRIORITY: True}
+        self.assertTrue(ClimateSchema.ENTITY_SCHEMA(node)[CONF_HOME_ASSISTANT_PRIORITY])

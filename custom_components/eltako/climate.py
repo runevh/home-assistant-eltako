@@ -29,7 +29,7 @@ from .core.gateway import EnOceanGateway
 from .core.entity import (EltakoEntity, RPSMessage, RestoreEntity, State, log_entities_to_be_added,
                           validate_actuators_dev_and_sender_id)
 from .const import (CONF_COOLING_MODE, CONF_MAX_TARGET_TEMPERATURE, CONF_MIN_TARGET_TEMPERATURE,
-                    CONF_OFF_TEMPERATURE, CONF_ROOM_SENSOR, CONF_ROOM_THERMOSTAT, CONF_SENDER, CONF_SENSOR,
+                    CONF_HOME_ASSISTANT_PRIORITY, CONF_OFF_TEMPERATURE, CONF_ROOM_SENSOR, CONF_ROOM_THERMOSTAT, CONF_SENDER, CONF_SENSOR,
                     CONF_SWITCH_BUTTON, EVENT_BUTTON_PRESSED, EVENT_CLIMATE_COOLING_SELECTED,
                     EVENT_CLIMATE_COOLING_STATE_CHANGED, EVENT_CLIMATE_PRIORITY_SELECTED, LOGGER)
 from .config.config_helpers import DeviceConf
@@ -81,7 +81,8 @@ async def async_setup_entry(
                                                        dev_conf.get(CONF_MIN_TARGET_TEMPERATURE), dev_conf.get(CONF_MAX_TARGET_TEMPERATURE),
                                                        thermostat, cooling_switch, cooling_sender,
                                                        dev_conf.area,
-                                                       room_sensor_entity_id, off_temperature)
+                                                       room_sensor_entity_id, off_temperature,
+                                                       entity_config.get(CONF_HOME_ASSISTANT_PRIORITY, False))
                     entities.append(climate_entity)
 
                     # subscribe for cooling switch events
@@ -165,13 +166,15 @@ class ClimateController(EltakoEntity, ClimateEntity, RestoreEntity):
                  sender_id: AddressExpression, sender_eep: EEP,
                  temp_unit, min_temp: int, max_temp: int,
                  thermostat: DeviceConf, cooling_switch: DeviceConf, cooling_sender: DeviceConf, dev_area: str=None,
-                 room_sensor_entity_id: str=None, off_temperature: float=None):
+                 room_sensor_entity_id: str=None, off_temperature: float=None,
+                 home_assistant_priority: bool=False):
         """Initialize the Eltako heating and cooling source."""
         super().__init__(platform, gateway, dev_id, dev_name, dev_eep, dev_area=dev_area)
         self._on_state = False
         self._sender_id = sender_id
         self._sender_eep = sender_eep
         self.off_temperature = off_temperature
+        self._home_assistant_priority = home_assistant_priority
         self._last_on_temp = None
         self._current_temperature_warning_logged = False
 
@@ -210,6 +213,8 @@ class ClimateController(EltakoEntity, ClimateEntity, RestoreEntity):
             self._attr_priority = A5_10_06.ControllerPriority.ACTUATOR_ACK
         else:
             self._attr_priority = A5_10_06.ControllerPriority.AUTO
+        if self._home_assistant_priority:
+            self._attr_priority = A5_10_06.ControllerPriority.HOME_AUTOMATION
         self._attr_actuator_mode = A5_10_06.HeaterMode.NORMAL
 
         # self._loop = asyncio.get_event_loop()
@@ -329,6 +334,8 @@ class ClimateController(EltakoEntity, ClimateEntity, RestoreEntity):
         await self._async_check_if_cooling_is_activated()
 
     async def async_handle_priority_events(self, call):
+        if self._home_assistant_priority:
+            return
         LOGGER.debug(f"[climate {self.dev_id}] Event received: {call.data}")
 
         self._attr_priority = A5_10_06.ControllerPriority.find_by_description(call.data['priority'])
@@ -384,6 +391,8 @@ class ClimateController(EltakoEntity, ClimateEntity, RestoreEntity):
 
     def _send_command(self, mode: A5_10_06.HeaterMode, target_temp: float, priority:A5_10_06.ControllerPriority) -> None:
         """Send command to set target temperature."""
+        if self._home_assistant_priority:
+            priority = A5_10_06.ControllerPriority.HOME_AUTOMATION
         address, _ = self._sender_id
         try:
             target_temp = float(target_temp)

@@ -164,6 +164,7 @@ CONF_ROOM_THERMOSTAT: Final = "thermostat"
 CONF_COOLING_MODE: Final = "cooling_mode"
 CONF_ROOM_SENSOR: Final = "room_sensor"
 CONF_OFF_TEMPERATURE: Final = "off_temperature"
+CONF_HOME_ASSISTANT_PRIORITY: Final = "home_assistant_priority"
 
 CONF_VIRTUAL_NETWORK_GATEWAY: Final = "Virtual ESP2 Reverse Network Bridge"
 

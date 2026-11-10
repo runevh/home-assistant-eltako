@@ -26,7 +26,7 @@ from ..const import (CONF_AREA, CONF_BASE_ID, CONF_COOLING_MODE, CONF_DEPRECATED
                      CONF_LOG_LEVEL_INCOMING,
                      CONF_LOG_LEVEL_OUTGOING, CONF_LOG_LEVEL_POLLING, CONF_LOG_LEVEL_UNKNOWN_DEVICES,
                      CONF_MAX_TARGET_TEMPERATURE, CONF_METER_TARIFFS, CONF_MIN_TARGET_TEMPERATURE,
-                     CONF_OFF_TEMPERATURE, CONF_PLUG_AND_PLAY, CONF_PLUG_AND_PLAY_INTERVAL, CONF_ROOM_SENSOR,
+                     CONF_HOME_ASSISTANT_PRIORITY, CONF_OFF_TEMPERATURE, CONF_PLUG_AND_PLAY, CONF_PLUG_AND_PLAY_INTERVAL, CONF_ROOM_SENSOR,
                      CONF_ROOM_THERMOSTAT, CONF_SENDER, CONF_SENSOR, CONF_SERIAL_PATH,
                      CONF_SHOW_DEV_ID_IN_DEV_NAME, CONF_SHOW_PANEL_IN_SIDEBAR, CONF_SIMULATED,
                      CONF_SWITCH_BUTTON, CONF_TELEGRAM_LOG_BACKUP_COUNT, CONF_TELEGRAM_LOG_BUFFER_SIZE,
@@ -353,6 +353,7 @@ class ClimateSchema(EltakoPlatformSchema):
                 vol.Optional(CONF_AREA): cv.string,
                 vol.Optional(CONF_ROOM_THERMOSTAT): _get_sender_schema(CONF_CLIMATE_SENDER_EEP),    # physical thermostat like FUTH
                 vol.Optional(CONF_COOLING_MODE): CONF_COOLING_MODE_SCHEMA,                          # if not provided cooling is not supported
+                vol.Optional(CONF_HOME_ASSISTANT_PRIORITY): cv.boolean,
                 vol.Optional(CONF_ROOM_SENSOR): cv.entity_id,                                      # entity_id of an HA sensor providing current temperature
                 vol.Optional(CONF_OFF_TEMPERATURE): vol.All(                                       # anti-frost / off-mode target temperature
                     cv.Number, vol.Range(min=0, max=40)
