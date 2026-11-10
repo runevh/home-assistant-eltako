@@ -142,3 +142,19 @@ configured policy. Omit it to retain device-specific defaults. The owner request
 this policy for all 12 installed heating zones. It does not bypass actuator frost
 protection, window contacts or other hardware safety behavior. Physical confirmation
 of the requested setpoint remains necessary.
+
+## Accepted live version
+
+The owner requested keeping the currently deployed behavior in this fork.
+All 107 tracked integration files were compared by SHA-256 with the live
+installation and matched commit `f784ff4` exactly, with no extra live source files.
+After forcing Home Assistant priority, live feedback confirmed the requested
+19°C and 9.5°C bedroom setpoints (18.98°C and 9.41°C at protocol resolution).
+The regression suite runs 1,621 tests successfully, with one skipped.
+
+This supersedes the earlier instruction to keep this PR in draft: the PR is
+ready for the owner to merge as the accepted live version. Known follow-up work
+remains: misleading heating-action/preset feedback interpretation and intermittent
+USB/serial failures which can drop light commands. Neither issue is claimed fixed.
+The deployment's private configuration is not committed; its 12 climate entries
+use `home_assistant_priority: true` as described above.
