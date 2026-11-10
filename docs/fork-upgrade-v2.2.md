@@ -111,3 +111,24 @@ ruff check custom_components tests
 python -m unittest discover tests -v
 python -m pytest eltako_standalone/tests
 ```
+
+## Feature branch retest after entity renaming
+
+The initial retest migrated all 285 registry entries and sent heating startup
+commands, but a detected base ID of `00-00-00-60` replaced the configured address
+and redirected feedback away from existing entity subscriptions. That test was
+rolled back. A safeguard now retains an explicitly configured base ID when a
+reported address disagrees; gateways with no configured address can still
+learn one. The source of the conflicting hardware response remains unresolved.
+
+The corrected branch was redeployed on 2026-11-10 and is running for manual
+testing. All 285 original public entity IDs, registry identities and disabled
+settings match the new backup; 11 additional diagnostic entities were created.
+Panel JavaScript returns HTTP 200. Startup heating commands were sent, and
+actuator feedback reached the four entities targeted by heating automations.
+The suite runs 1,616 tests successfully (one skipped), and Ruff passes.
+
+Manual panel interaction and physical setpoint/actuator confirmation remain
+pending. Keep the PR in draft until these checks pass. This test's rollback
+snapshot is `/share/eltako-feedback-retest-20261110`; it includes the renamed
+`gw_1` configuration. The feature branch has not been merged.
