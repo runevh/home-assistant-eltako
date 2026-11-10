@@ -77,6 +77,20 @@ check priority/preset behavior and existing lighting/cover controls. A successfu
 registry migration alone does not prove physical control or USB reliability.
 The pre-test backups remain at `/share/eltako-extended-test-20261110` on the host.
 
+## Entity naming update, 2026-11-10
+
+At the owner's request, the live v1 installation's 285 public entity IDs were
+renamed from `eltako_gw1_...` to `eltako_gw_1_...`, together with references in
+YAML automations/templates, stored dashboards, schedules and restore states.
+Internal v1 unique IDs remain unchanged so v1 still resolves the same registry
+entries; the v2 migration above will update those unique IDs later without
+renaming the now-normalized public IDs. Registry identities and disabled states
+are preserved. Historical logs and recorder data are not rewritten.
+A separate consistent backup and mapping are retained on the host at
+`/share/eltako-gw-rename-20261110`. Older rollback snapshots predate this rename
+and must not be restored without also restoring their matching YAML/dashboard
+references.
+
 ## Validation
 
 CI runs the integration suite on Python 3.14 with both Home Assistant 2026.3.4
