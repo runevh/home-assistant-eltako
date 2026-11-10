@@ -1,19 +1,30 @@
 # Gateways
 
-A gateway is the component which builds the bridge between Home Assistant and the EnOcean wireless network or the RS485 bus. The gateway listens to telegrams on the RS485 bus or in the wireless network and transfers them to Home Assistant. In Home Assistant the Eltako Integration can send telegram either into wireless network or directly on the RS485 bus dependent on the type of gateway (USB based connection or radio transmitter). Based on the delivered EnOcean telegrams the Eltako Integration can display the state of the actuators or send commands to change those states. In Home Assistant gateways are also called hubs.
+A gateway is the component which builds the bridge between Home Assistant and the EnOcean wireless network or the RS485 bus. The gateway listens to telegrams on the RS485 bus or in the wireless network and transfers them to Home Assistant. In Home Assistant the ELTAKO Integration can send telegram either into wireless network or directly on the RS485 bus dependent on the type of gateway (USB based connection or radio transmitter). Based on the delivered EnOcean telegrams the ELTAKO Integration can display the state of the actuators or send commands to change those states. In Home Assistant gateways are also called hubs.
+
+> [!NOTE]
+> **A gateway does not have to be configured in a file.** Adding the integration
+> (*Settings &rarr; Devices & services &rarr; Add integration &rarr; ELTAKO*) detects what can be detected -
+> the serial ports are probed and LAN gateways which announce themselves via mDNS are picked up
+> ([plug & play](../plug-and-play/readme.md)). Everything else is added on the *Overview* page of the
+> [web ui](../web-ui/readme.md) with **"+ add gateway"**: type, serial port or host, id - the ports of a
+> scan are offered as suggestions and the base id is queried from the hardware.
+>
+> The `configuration.yaml` snippets in the sections below are the alternative for everyone who keeps
+> their setup in files. They still work and still win over the web ui.
 
 ## Summary of Supported Gateways
 What gateway is preferred for what?
 
-### EnOcean Transceiver (USB based like Eltako FAM-USB, USB300, PioTek FAM-USB515, PioTek MGW, Busware TCM515 USB ...)
+### EnOcean Transceiver (USB based like ELTAKO FAM-USB, USB300, PioTek FAM-USB515, PioTek MGW, Busware TCM515 USB, ...)
 * Is a good match for controlling actuators mounted on a RS485 bus with FAM14 and especially for decentralized actuators in Home Assistant.
-* It also allows to send teach-in telegrams so that you can teach-in actuators by using the Eltako Integration in Home Assistant.
+* It also allows to send teach-in telegrams so that you can teach-in actuators by using the ELTAKO Integration in Home Assistant.
 * It receives status update telegrams repatedly about each minute of every device on the bus.
 * It cannot receive RS485 bus internal commands. E.g. FTS14EM (wired rocker switches, window contacts, ...) telegrams cannot be received. Those telegrams must be consumed on the bus although status responses of the actuators will be sent into wireless network so that FAM-USB can see the result of the changes.
 * Easy installation (USB-Stick)
 * Reception quality depends on how close is it to all the devices and repeaters. (Wireless connection could be instable.)
 
-### Wired Gateways (e.g. Eltako FGW14-USB)
+### Wired Gateways (e.g. ELTAKO FGW14-USB)
 * Has good performance because it filters out polling messages from FAM14 what makes Home Assistant faster.
 * Like FAM14, it can transfer states of actuators mounted on the same RS485 bus to Home Assistant. It can also send telegrams to the actuators to change their states.
 * Has better physical USB connector than FAM14.
@@ -22,7 +33,7 @@ What gateway is preferred for what?
 * Installation means change to the existing bus in the electric cabinet. (Little electirc knowledge required)
 * Good connection quality.
 
-### Controller Gateway (Eltako FAM14)
+### Controller Gateway (ELTAKO FAM14)
 * Similar to FGW14-USB
 * Can read memory of actuators. You can use it to [auto-generate configuration for Home Assistant](https://github.com/grimmpp/enocean-device-manager).
 * Quite a lot of unnecessary telegrams are sent to Home Assistant. Home Assistant could become slower.
@@ -44,9 +55,9 @@ With FAM-USB (e.g. PioTek FAM-USB515) most use cases can be covered and FGW14-US
 
 ## Types of gateways
 
-### [**Eltako FAM14**](https://www.eltako.com/en/product/professional-smart-home-en/series-14-rs485-bus-rail-mounted-devices-for-the-centralised-wireless-building-installation/fam14/) 
+### [**ELTAKO FAM14**](https://www.eltako.com/en/product/professional-smart-home-en/series-14-rs485-bus-rail-mounted-devices-for-the-centralised-wireless-building-installation/fam14/) 
 
-FAM14 is the wireless antenna module for the Eltako RS485 bus on which actuators can be plugged in. It sends the EnOcean telegram into the wireless network and can receive them either from the bus or wireless network.
+FAM14 is the wireless antenna module for the ELTAKO RS485 bus on which actuators can be plugged in. It sends the EnOcean telegram into the wireless network and can receive them either from the bus or wireless network.
 You can use its usb port to connect it to Home Assistant. 
 
 <img src="FAM14.jpg" height=100/> 
@@ -55,12 +66,12 @@ You can use its usb port to connect it to Home Assistant.
 | ----- | ----- |
 | Protocol | ESP2 |
 | Baud rate | 57600 |
-| Configuration Tool for Eltako Bus | [PCT14](https://www.eltako.com/en/software-pct14/) | 
+| Configuration Tool for ELTAKO Bus | [PCT14](https://www.eltako.com/en/software-pct14/) | 
 | Manual | [en](https://www.eltako.com/fileadmin/downloads/en/_bedienung/FAM14_30014000-2_gb.pdf), [de](https://www.eltako.com/fileadmin/downloads/de/_bedienung/FAM14_30014000-3_dt.pdf) |
 | Address space | 128 internal address can be used for actuators. If you need more you can increase your setup by a second RS485 bus incl. dedicated FAM14. |
 
 #### Pros
-* Can read memory of actuators. You can use it to [auto-generate a configuration file for Home Assistant](../../eltakodevice_discovery/readme.md). 
+* Can read memory of actuators. You can use it to [auto-generate a configuration file for Home Assistant](https://github.com/grimmpp/enocean-device-manager). 
 * Not dependent on wireless network. Very stable connection.
 * Receives internal command on the RS485 bu. E.g. telegrams from rocker switches conncted via wires to FTS14EM.
 
@@ -102,7 +113,7 @@ eltako:
 
 
 
-### [**Eltako FGW14-USB**](https://www.eltako.com/en/product/professional-smart-home-en/series-14-rs485-bus-rail-mounted-devices-for-the-centralised-wireless-building-installation/fgw14-usb/)
+### [**ELTAKO FGW14-USB**](https://www.eltako.com/en/product/professional-smart-home-en/series-14-rs485-bus-rail-mounted-devices-for-the-centralised-wireless-building-installation/fgw14-usb/)
 
 Is mounted on the rs485 bus and can read incoming telegrams from the wireless network, status telegrams of actuators mounted on the bus and can send commands to only the actuators mounted on the same rs485 bus. 
 
@@ -131,7 +142,7 @@ Same like for FAM14.
 
 
 
-### [**Eltako FAM-USB**](https://www.eltako.com/en/product/professional-standard-en/three-phase-energy-meters-and-one-phase-energy-meters/fam-usb/)
+### [**ELTAKO FAM-USB**](https://www.eltako.com/en/product/professional-standard-en/three-phase-energy-meters-and-one-phase-energy-meters/fam-usb/)
 
 FAM-USB is a usb device which can receive and send EnOcean telegrams via ESP2 protocol. You can use it as gateway in Home Assistant to receive information and to control your actuators. It is connected to the decentralized actuators and to the actuators mounted on a RS485 bus via wireless network.
 
@@ -139,7 +150,7 @@ FAM-USB is a usb device which can receive and send EnOcean telegrams via ESP2 pr
 
 | Specialty | Description |
 | ----- | ----- |
-| Chip Set | [TCM300](https://www.enocean.com/en/product/tcm-300/?frequency=868), [Datasheet](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-300/data-sheet-pdf/TCM_300_TCM_320_DataSheet_May2019.pdf), [User Manual](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-300/user-manual-pdf/TCM300_TCM320_UserManual_Nov2021.pdf), [Firmeware](https://www.enocean.com/en/support/software-tools-kits) |
+| Chip Set | [TCM300](https://www.enocean.com/en/product/tcm-300/?frequency=868), [Datasheet](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-300/data-sheet-pdf/TCM_300_TCM_320_DataSheet_May2019.pdf), [User Manual](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-300/user-manual-pdf/TCM300_TCM320_UserManual_Nov2021.pdf), [Firmware](https://www.enocean.com/en/support/software-tools-kits) |
 | Protocol | ESP2 |
 | Baud rate | 9600 |
 | Tool for chip configuration | [DolphinStudio](https://www.enocean.com/de/produkt/dolphinstudio/?ts=1701468463) |
@@ -227,7 +238,7 @@ Successor of USB300 with better range and same protocol (ESP3).
 
 | Specialty | Description |
 | ----- | ----- |
-| Chip Set | [TCM515]([https://www.enocean.com/en/product/tcm-300/?frequency=868), [Datasheet](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-300/data-sheet-pdf/TCM_300_TCM_320_DataSheet_May2019.pdf](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-515/data-sheet-pdf/TCM_515_Data_Sheet_Nov2020.pdf)), [User Manual]([https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-300/user-manual-pdf/TCM300_TCM320_UserManual_Nov2021.pdf), [Firmeware](https://www.enocean.com/en/support/software-tools-kits](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules_928mhz/tcm-515j/user-manual-pdf/TCM-515-User-Manual-1.pdf)) |
+| Chip Set | TCM515, [Datasheet](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-515/data-sheet-pdf/TCM_515_Data_Sheet_Nov2020.pdf), [User Manual](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules_928mhz/tcm-515j/user-manual-pdf/TCM-515-User-Manual-1.pdf), [Firmware](https://www.enocean.com/en/support/software-tools-kits) |
 | Protocol | ESP3 |
 | Baud rate | 57600 |
 | Tool | [BCS](https://www.piotek.de/mediafiles/Sonstiges/BSC-480.zip) |
@@ -240,7 +251,7 @@ Similar to PioTek FAM-USB515. Is supports ESP3 over TCP for LAN (cable) and Wifi
 
 | Specialty | Description |
 | ----- | ----- |
-| Chip Set | [TCM515]([https://www.enocean.com/en/product/tcm-300/?frequency=868), [Datasheet](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-300/data-sheet-pdf/TCM_300_TCM_320_DataSheet_May2019.pdf](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-515/data-sheet-pdf/TCM_515_Data_Sheet_Nov2020.pdf)), [User Manual]([https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-300/user-manual-pdf/TCM300_TCM320_UserManual_Nov2021.pdf), [Firmeware](https://www.enocean.com/en/support/software-tools-kits](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules_928mhz/tcm-515j/user-manual-pdf/TCM-515-User-Manual-1.pdf)) |
+| Chip Set | TCM515, [Datasheet](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-515/data-sheet-pdf/TCM_515_Data_Sheet_Nov2020.pdf), [User Manual](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules_928mhz/tcm-515j/user-manual-pdf/TCM-515-User-Manual-1.pdf), [Firmware](https://www.enocean.com/en/support/software-tools-kits) |
 | Protocol | ESP3 |
 | Baud rate | 57600 |
 | Tool | [BCS](https://www.piotek.de/mediafiles/Sonstiges/BSC-480.zip) |
@@ -267,44 +278,44 @@ eltako:
 ```
 
 
-### Busware EnOcean TCM515 USB/WLAN Stick
+### Busware EnOcean TCM515 USB/WiFi Stick
 
 
 <img src="./Busware_TCM515.JPG" height=100>
 
 | Specialty | Description |
 | ----- | ----- |
-| Chip Set | [TCM515]([https://www.enocean.com/en/product/tcm-300/?frequency=868), [Datasheet](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-300/data-sheet-pdf/TCM_300_TCM_320_DataSheet_May2019.pdf](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-515/data-sheet-pdf/TCM_515_Data_Sheet_Nov2020.pdf)), [User Manual](https://busware.de/tiki-index.php?page=EUL), [Firmeware/Web-Installer](https://install.busware.de/) |
+| Chip Set | [TCM515](https://www.enocean.com/en/product/tcm-515/), [Datasheet](https://www.enocean.com/wp-content/uploads/downloads-produkte/en/products/enocean_modules/tcm-515/data-sheet-pdf/TCM_515_Data_Sheet_Nov2020.pdf), [User Manual](https://busware.de/tiki-index.php?page=EUL), [Firmware/Web-Installer](https://install.busware.de/) |
 | Protocol | ESP3 |
 | Connection | TCP Port 2325 |
 | Tool | [Firmware @Github](https://github.com/tostmann/busware-esp32/blob/main/firmware/busware-eul-c3-wifi-transparent.factory.bin), [Firmware @Busware](https://install.busware.de/firmware/busware-eul-c3-wifi-transparent.factory.bin) |
 | Sender Address Range | TCM515 has 128 address in the range of 0xFF80_0000 to 0xFFFF_FFFE starting at a base address (BaseId).  |
 
-Where to buy?: https://shop.busware.de/product_info.php/products_id/66?osCsid=d0ad3e15909d88de68471549c6ec8a1d
+Where to buy?: https://shop.busware.de/product_info.php/products_id/66
 
 #### Pro
-* TCP/Serial Wifi-Bridge
+* TCP/Serial WiFi bridge
 * Full functionality
 * Easy installation + cheap price (~40-50€)
 
 #### Con
 * Firmware needs to be flashed by yourself
 * Needs WiFi connection
- 
+
 <br> How-To:
 
-1. Connect your USB Stick to your PC
-2. Go to: https://install.busware.de/ with e.g Chrome Browser / Microsoft Edge
-3. Choose the correct FW (--> EnOcean TCM515 (EUL) | WiFi-bridge (Port 2325))
+1. Connect your USB stick to your PC.
+2. Go to https://install.busware.de/ with e.g. Chrome or Microsoft Edge.
+3. Choose the correct firmware (--> EnOcean TCM515 (EUL) | WiFi-bridge (Port 2325)).
    <br><img src="./Install_WiFi-Bridge.png" height=300>
-4. press connect and choose the your COM-port
+4. Press connect and choose your COM port.
    <br><img src="./COM-Port.png" height=200>
-5. Erase the flash and install
-6. Enter your WiFi credentials
-7. After successful installation you will be forwareded to the UI of the stick
-  <br><img src="./Busware_TCM515_UI.png" height=200>
-8. HomeAssistant: install Eltako - [feature branch](/docs/install-specific-version-or-branch.md)
-9. add to your HomeAssistant configuration.yaml | adjust the Base ID and IP address
+5. Erase the flash and install.
+6. Enter your WiFi credentials.
+7. After a successful installation you will be forwarded to the UI of the stick.
+   <br><img src="./Busware_TCM515_UI.png" height=200>
+8. Home Assistant: install ELTAKO - [feature branch](../install-specific-version-or-branch.md)
+9. Add the following to your Home Assistant `configuration.yaml` and adjust the base id and the IP address.
 ```
 eltako:
   gateway:
@@ -323,12 +334,9 @@ eltako:
           id: FF-80-80-01       # baseId of USB300 (FF-80-80-00) + sender id (0-80 HEX/128 DEZ)
           eep: A5-38-08
 ```
-10. add the Eltako Integration in HomeAssistant
+10. Add the ELTAKO integration in Home Assistant.
 <br> <img src="./HA_add_TCP_Bridge_Eltako_Integration.png" height=200>
 
-
-
- 
 
 ### FTD14 - RS485 bus telegram duplicator
 

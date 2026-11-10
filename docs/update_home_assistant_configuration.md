@@ -1,13 +1,23 @@
 # Update Home Assistant Configuration
 
-Before you can start and see your devices and sensors in Home Assistant you need to enter them unfortunately manually into the Home Assistant Configuration ``/config/configuration.yaml``. 
+> [!NOTE]
+> **This is the optional way.** Gateways, devices and all general settings can be configured in the
+> [web ui](web-ui/readme.md) of the integration, which is in the sidebar as soon as the integration is
+> set up &ndash; no `configuration.yaml` needed for anything. This page describes the file based
+> configuration for everyone who prefers to keep their setup in files (and it explains the schema
+> behind the forms of the web ui).
+>
+> Both sources are validated identically and can be mixed. A device declared here **wins**: it cannot be
+> edited or deleted in the web ui, because the next reload would bring it back.
+
+Devices and sensors are entered into the Home Assistant configuration ``/config/configuration.yaml``.
 You can edit the configuration file e.g. with the add-on [File Editor](https://github.com/home-assistant/addons/tree/master/configurator). 
-In order to get supported by creating the configuration and managing your devices you can use [Enocean Device Manager (eo_man)](https://github.com/grimmpp/enocean-device-manager).
+In order to get supported by creating the configuration and managing your devices you can use [Enocean Device Manager (eo_man)](https://github.com/grimmpp/enocean-device-manager). The web ui can **import** its projects, a PCT14 export or an existing yaml directly.
 
 After you have finished the configuration changes **don't forget to restart Home Assistant so that the changes will be applied.** Hint: You can trigger the restart in the menu of File Editor.
 
 ## Schema of the configuration file:
-If the documentation might be outdated and not complete you can always find the truth in [schema.py](../custom_components/eltako/schema.py).
+If the documentation might be outdated and not complete you can always find the truth in [schema.py](../custom_components/eltako/config/schema.py).
 
 A device inside a device type alway consists of
 * id - This is the address of the device on the bus
@@ -227,6 +237,8 @@ eltako:
             id: 00-00-B0-09
             eep: A5-10-06
           temperature_unit: °C
+          room_sensor: sensor.living_room_temperature
+          off_temperature: 8
 
 logger:
   default: info
@@ -235,3 +247,20 @@ logger:
 
 
 ~~~~~~~~
+
+For climate devices, `room_sensor` is optional and must be the entity ID of a Home
+Assistant temperature sensor. Its value is included as the current temperature in
+outgoing A5-10-06 telegrams. `off_temperature` is optional as well; when set, HVAC
+mode `off` is represented by this anti-frost target temperature instead of an RPS
+mode telegram. It must be between 0 and 40 °C.
+
+All configured climate senders (the Home Assistant sender, `thermostat` and an
+optional `cooling_mode.sender`) can be taught from the Web UI. For RS485 bus
+actuators use **check & teach in configured senders** with the FAM14 connected;
+PCT14/EnOcean Device Manager is not required for these sender-memory entries.
+Wireless actuators must be put into teach-in mode manually before using the device's
+teach-in action. The `room_sensor` itself is a Home Assistant input and does not
+require EnOcean teach-in.
+If a physical `thermostat` is configured, its sender must be taught into the
+actuator separately with PCT14, EnOcean Device Manager, or the device's manual
+teach-in procedure; the integration currently only automates the HA sender.

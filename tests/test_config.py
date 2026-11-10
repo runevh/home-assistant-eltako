@@ -1,13 +1,15 @@
-import unittest
 import os
-from tests.mocks import *
-from unittest import mock, IsolatedAsyncioTestCase, TestCase
-from custom_components.eltako.config_helpers import async_get_home_assistant_config
-from custom_components.eltako.schema import CONFIG_SCHEMA, GatewaySchema
-from custom_components.eltako.gateway import *
-from custom_components.eltako.const import *
-from custom_components.eltako import config_helpers
-from homeassistant.const import CONF_DEVICE, Platform
+from unittest import IsolatedAsyncioTestCase, TestCase
+from custom_components.eltako.config.config_helpers import DeviceConf, async_get_home_assistant_config
+from custom_components.eltako.config.schema import CONFIG_SCHEMA, GatewaySchema
+from custom_components.eltako.const import (CONF_AREA, CONF_BASE_ID, CONF_DEVICE_TYPE, CONF_EEP,
+                                            CONF_FAST_STATUS_CHANGE, CONF_GATEWAY, CONF_GATEWAY_ID,
+                                            CONF_GERNERAL_SETTINGS, CONF_LOG_ENOCEAN_TELEGRAMS,
+                                            CONF_MAX_TARGET_TEMPERATURE, CONF_MIN_TARGET_TEMPERATURE,
+                                            CONF_TELEGRAM_LOG_FILENAME, CONF_TELEGRAM_LOG_FORMAT, DOMAIN,
+                                            GatewayDeviceType, TelegramLogFormat)
+from custom_components.eltako.config import config_helpers
+from homeassistant.const import CONF_DEVICE, CONF_DEVICES, CONF_ID, CONF_NAME, Platform
 
 import yaml
 
@@ -26,7 +28,7 @@ class TestIdComparison(IsolatedAsyncioTestCase):
 
     async def test_config(self):
         config = await async_get_home_assistant_config(None, CONFIG_SCHEMA, get_config_basic_fam14)
-        
+
         self.assertTrue(CONF_GERNERAL_SETTINGS in config)
         self.assertTrue(not config[CONF_GERNERAL_SETTINGS][CONF_FAST_STATUS_CHANGE])
 
@@ -38,7 +40,18 @@ class TestIdComparison(IsolatedAsyncioTestCase):
 
     async def test_config_example(self):
         config = await async_get_home_assistant_config(None, CONFIG_SCHEMA, get_ha_config)
-        pass
+        self.assertTrue(CONF_GATEWAY in config)
+
+        # The example configuration must be valid, otherwise Home Assistant would reject it.
+        # (async_get_home_assistant_config returns the config unvalidated if the domain exists.)
+        raw_config = await get_ha_config(None, DOMAIN)
+        validated = CONFIG_SCHEMA(raw_config)[DOMAIN]
+
+        # all documented general settings incl. telegram logging are validated and complete
+        general_settings = validated[CONF_GERNERAL_SETTINGS]
+        self.assertTrue(general_settings[CONF_LOG_ENOCEAN_TELEGRAMS])
+        self.assertEqual(general_settings[CONF_TELEGRAM_LOG_FORMAT], TelegramLogFormat.JSONL.value)
+        self.assertTrue(len(general_settings[CONF_TELEGRAM_LOG_FILENAME]) > 0)
 
 class TestDeviceConfig(TestCase):
 
@@ -125,7 +138,7 @@ class TestDeviceConfig(TestCase):
             self.assertTrue(hasattr(dev_config, k), f"{k} is expected to be an attribute in config.")
             self.assertIsNone(dev_config[k], f"{k} is expected to be None.")
             self.assertIsNone(dev_config.get(k), f"{k} is expected to be None.")
-                  
+
         for k in [CONF_MAX_TARGET_TEMPERATURE, CONF_MIN_TARGET_TEMPERATURE]:
             self.assertFalse(k in dev_config, f"{k} is not expected to be in config.")
             self.assertIsNone(dev_config.get(k), f"{k} is expected to be None.")
@@ -214,6 +227,96 @@ gateway:
     def test_config_validation(self):
         config = yaml.safe_load(self.config_str)
         CONFIG_SCHEMA(config)
+
+    def test_device_config_area(self):
+        """DeviceConf parses the optional area attribute."""
+        with_area = {
+            CONF_ID: "FF-AA-80-01",
+            CONF_EEP: "A5-10-06",
+            CONF_AREA: "Kitchen",
+        }
+        dev_config = DeviceConf(with_area)
+        self.assertTrue(CONF_AREA in dev_config)
+        self.assertTrue(hasattr(dev_config, "area"))
+        self.assertEqual(dev_config.area, "Kitchen")
+        self.assertEqual(dev_config[CONF_AREA], "Kitchen")
+
+    def test_device_config_area_default_none(self):
+        """When area is not configured, DeviceConf.area is None."""
+        dev_config = DeviceConf({
+            CONF_ID: "FF-AA-80-01",
+            CONF_EEP: "A5-10-06",
+        })
+        self.assertTrue(CONF_AREA in dev_config)
+        self.assertIsNone(dev_config.area)
+        self.assertIsNone(dev_config[CONF_AREA])
+
+    config_str_with_area = """
+general_settings:
+  fast_status_change: False
+gateway:
+  - id: 1
+    device_type: fgw14usb
+    base_id: FF-AA-00-00
+    name: GW1
+    devices:
+      light:
+      - id: 00-00-00-01
+        eep: M5-38-08
+        name: "Ceiling Light"
+        area: "Living Room"
+        sender:
+          id: 00-00-B0-01
+          eep: A5-38-08
+      sensor:
+      - id: 05-1E-83-15
+        eep: A5-13-01
+        name: "Weather Station"
+        area: "Garden"
+      binary_sensor:
+      - id: 00-00-00-02
+        eep: F6-02-01
+        name: "Wall Switch"
+        area: "Hallway"
+      switch:
+      - id: 00-00-00-03
+        eep: M5-38-08
+        name: "Outlet"
+        area: "Office"
+        sender:
+          id: 00-00-B0-03
+          eep: A5-38-08
+      cover:
+      - id: 00-00-00-04
+        eep: G5-3F-7F
+        name: "Blinds"
+        area: "Bedroom"
+        sender:
+          id: 00-00-B0-04
+          eep: H5-3F-7F
+      climate:
+      - id: 00-00-00-05
+        eep: A5-10-06
+        name: "Thermostat"
+        area: "Hall"
+        temperature_unit: "°C"
+        sender:
+          id: 00-00-B0-05
+          eep: A5-10-06
+"""
+
+    def test_config_validation_with_area(self):
+        """area is accepted on every device platform."""
+        config = yaml.safe_load(self.config_str_with_area)
+        validated = CONFIG_SCHEMA(config)
+
+        devices = validated[CONF_GATEWAY][0][CONF_DEVICES]
+        self.assertEqual(devices[Platform.LIGHT][0][CONF_AREA], "Living Room")
+        self.assertEqual(devices[Platform.SENSOR][0][CONF_AREA], "Garden")
+        self.assertEqual(devices[Platform.BINARY_SENSOR][0][CONF_AREA], "Hallway")
+        self.assertEqual(devices[Platform.SWITCH][0][CONF_AREA], "Office")
+        self.assertEqual(devices[Platform.COVER][0][CONF_AREA], "Bedroom")
+        self.assertEqual(devices[Platform.CLIMATE][0][CONF_AREA], "Hall")
 
     def test_config_validation_example_file(self):
         filename = os.path.join(os.getcwd(), 'ha.yaml')
