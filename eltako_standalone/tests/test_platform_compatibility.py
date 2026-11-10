@@ -45,3 +45,23 @@ def test_cover_service_entity_ids():
     assert entity_ids(['cover.one']) == ['cover.one']
     with pytest.raises(vol.Invalid):
         entity_ids(['not an entity'])
+
+
+def test_legacy_entity_migration_in_standalone():
+    from types import SimpleNamespace
+    from homeassistant.exceptions import ConfigEntryError, HomeAssistantError
+    from homeassistant.helpers.entity_registry import EntityRegistry
+    from custom_components.eltako.core.entity_migration import migrate_entity_registry
+
+    assert issubclass(ConfigEntryError, HomeAssistantError)
+    registry = EntityRegistry(SimpleNamespace(data={}))
+    entry = registry.async_get_or_create(
+        entity_id='climate.bedroom', unique_id='eltako_gw1_00_00_00_4a',
+        platform='eltako', domain='climate', config_entry_id='gateway-1',
+    )
+    entry.disabled_by = 'user'
+    assert migrate_entity_registry(registry, 'gateway-1', 1) == 1
+    assert registry.async_get('climate.bedroom') is entry
+    assert entry.unique_id == 'eltako_gw_1_00_00_00_4a'
+    assert entry.disabled_by == 'user'
+    assert migrate_entity_registry(registry, 'gateway-1', 1) == 0

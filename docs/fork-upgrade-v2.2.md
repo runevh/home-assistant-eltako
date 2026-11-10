@@ -158,3 +158,19 @@ remains: misleading heating-action/preset feedback interpretation and intermitte
 USB/serial failures which can drop light commands. Neither issue is claimed fixed.
 The deployment's private configuration is not committed; its 12 climate entries
 use `home_assistant_priority: true` as described above.
+
+## Checks before pushing
+
+Run the integration suite in separate environments for the installed HA release
+(2026.3.4) and the latest supported HA release. Run the standalone suite in a
+separate process so its HA shim does not contaminate the integration tests.
+Build the sdist/wheel, check metadata with Twine, install the wheel into clean
+Python 3.12, 3.13 and 3.14 environments, and run the package-import and demo-boot
+steps from `.github/workflows/build_package.yml` outside the source checkout.
+Do not use a passing installed-HA suite as a substitute for these package checks.
+Windows/macOS checks still require the corresponding CI runners. HACS also checks
+GitHub repository metadata (Issues enabled and repository topics); those cannot
+be established by local Python tests.
+
+The CI compatibility follow-up changes only standalone shim support and tests;
+it does not change the integration code currently running on Home Assistant.

@@ -18,6 +18,7 @@ class RegistryEntry:
     device_id: str | None = None
     area_id: str | None = None
     disabled_by: str | None = None
+    config_entry_id: str | None = None
 
 
 class EntityRegistry:
@@ -36,15 +37,24 @@ class EntityRegistry:
         return None
 
     def async_get_or_create(self, *, entity_id: str, unique_id=None, platform=None,
-                            domain=None, name=None, **kwargs) -> RegistryEntry:
+                            domain=None, name=None, config_entry_id=None, **kwargs) -> RegistryEntry:
         entry = self.entities.get(entity_id)
         if entry is None:
             entry = RegistryEntry(entity_id=entity_id)
             self.entities[entity_id] = entry
+        entry.config_entry_id = config_entry_id or entry.config_entry_id
         entry.unique_id = unique_id or entry.unique_id
         entry.platform = platform or entry.platform
         entry.domain = domain or (entity_id.split(".")[0] if "." in entity_id else None)
         entry.original_name = name or entry.original_name
+        return entry
+
+    def async_update_entity(self, entity_id: str, *, new_unique_id: str) -> RegistryEntry:
+        entry = self.entities[entity_id]
+        existing = self.async_get_entity_id(entry.domain, entry.platform, new_unique_id)
+        if existing is not None and existing != entity_id:
+            raise ValueError(f"Unique ID already registered: {new_unique_id}")
+        entry.unique_id = new_unique_id
         return entry
 
     def async_remove(self, entity_id: str) -> None:

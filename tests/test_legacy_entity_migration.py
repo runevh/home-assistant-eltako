@@ -80,8 +80,12 @@ class TestRealHomeAssistantRegistry(unittest.IsolatedAsyncioTestCase):
 
         hass = HomeAssistant('/tmp/eltako-registry-unit-test')
         registry = EntityRegistry(hass)
-        registry.entities = EntityRegistryItems()
+        import inspect
+        registry.entities = EntityRegistryItems(hass) if "hass" in inspect.signature(EntityRegistryItems).parameters else EntityRegistryItems()
         registry.deleted_entities = {}
+        from homeassistant.helpers import entity_registry as er
+        if hasattr(er, "EntityRegistrySettings"):
+            registry.settings = er.EntityRegistrySettings()
         with patch.object(registry, 'async_schedule_save'):
             old = registry.async_get_or_create(
                 'climate', 'eltako', 'eltako_gw1_00_00_00_47',

@@ -11,3 +11,7 @@ class HomeAssistantError(Exception):
 
 class ServiceValidationError(HomeAssistantError):
     """A service was called with values which cannot be used."""
+
+
+class ConfigEntryError(HomeAssistantError):
+    """A configuration entry cannot be set up until its configuration is corrected."""

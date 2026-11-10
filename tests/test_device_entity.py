@@ -90,4 +90,6 @@ class TestEntityProperties(unittest.TestCase):
             info = entity.device_info
         field = "via_device_id" if "via_device_id" in DeviceInfo.__annotations__ else "via_device"
         self.assertIn(field, info)
-        self.assertTrue(set(info).issubset(inspect.signature(DeviceRegistry.async_get_or_create).parameters))
+        fields = info if isinstance(info, dict) else DeviceInfo.__annotations__
+        provided = {key for key in fields if key in info}
+        self.assertTrue(provided.issubset(inspect.signature(DeviceRegistry.async_get_or_create).parameters))

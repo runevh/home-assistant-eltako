@@ -57,6 +57,7 @@ class EntityPlatform:
             registry = er.async_get(self.hass)
             registry.async_get_or_create(entity_id=entity_id, unique_id=unique_id,
                                          platform=self.platform_name, domain=self.domain,
+                                         config_entry_id=getattr(self.config_entry, "entry_id", None),
                                          name=getattr(entity, "name", None))
             device_info = getattr(entity, "device_info", None)
             if device_info:
