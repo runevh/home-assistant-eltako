@@ -1,10 +1,10 @@
 import unittest
-from custom_components.eltako.sensor import *
+from custom_components.eltako.sensor import Platform
 from unittest import mock
-from tests.mocks import *
+from tests.mocks import GatewayMock, LatestStateMock
 from homeassistant.helpers.entity import Entity
-from eltakobus import *
-from custom_components.eltako.switch import EltakoSwitch
+from eltakobus import AddressExpression, EEP, ESP2Message, RPSMessage, Regular4BSMessage
+from custom_components.eltako.switch import ClimateCoolingSwitch, EltakoSwitch
 
 
 # mock update of Home Assistant
@@ -22,7 +22,7 @@ class TestSwitch(unittest.TestCase):
         dev_id = AddressExpression.parse('00-00-00-01')
         dev_name = 'device name'
         eep_string = 'M5-38-08'
-        
+
         dev_eep = EEP.find(eep_string)
         sender_eep = EEP.find(sender_eep_string)
 
@@ -50,7 +50,7 @@ class TestSwitch(unittest.TestCase):
         switch.value_changed(on_msg)
         self.assertEqual(switch.is_on, True)
         self.assertEqual(switch.state, 'on')
-        
+
         switch.value_changed(off_msg)
         self.assertEqual(switch.is_on, False)
         self.assertEqual(switch.state, 'off')
@@ -95,7 +95,7 @@ class TestSwitch(unittest.TestCase):
         switch.value_changed(on_msg)
         self.assertEqual(switch.is_on, True)
         self.assertEqual(switch.state, 'on')
-        
+
         switch.value_changed(off_msg)
         self.assertEqual(switch.is_on, False)
         self.assertEqual(switch.state, 'off')
@@ -148,7 +148,7 @@ class TestSwitch(unittest.TestCase):
         switch.value_changed(on_msg)
         self.assertEqual(switch.is_on, True)
         self.assertEqual(switch.state, 'on')
-        
+
         switch.value_changed(off_msg)
         self.assertEqual(switch.is_on, False)
         self.assertEqual(switch.state, 'off')
@@ -207,3 +207,17 @@ class TestSwitch(unittest.TestCase):
         self.assertIsNone(switch._attr_is_on)
         self.assertIsNone(switch.is_on)
         self.assertIsNone(switch.state)
+
+    def test_climate_cooling_switch_selects_heating_and_cooling(self):
+        switch = ClimateCoolingSwitch(
+            Platform.SWITCH, GatewayMock(), AddressExpression.parse('00-00-00-01'),
+            'Heating', EEP.find('A5-10-06')
+        )
+
+        switch.turn_on()
+        self.assertTrue(switch.is_on)
+        self.assertEqual(switch.hass.bus.fired_events[-1]['event_data'], {'cooling': True})
+
+        switch.turn_off()
+        self.assertFalse(switch.is_on)
+        self.assertEqual(switch.hass.bus.fired_events[-1]['event_data'], {'cooling': False})

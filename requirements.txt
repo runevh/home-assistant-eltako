@@ -1,9 +1,13 @@
 aiocoap
 pyserial-asyncio
-eltako14bus==0.0.71
+eltako14bus==1.0.1
 enocean>=0.60.1
 homeassistant
 termcolor
-StrEnum
-esp2-gateway-adapter==0.2.15
+strenum
+esp2-gateway-adapter==0.2.21
+
+# development only - the integration itself needs nothing of this at runtime
+# (its runtime requirements are the 'requirements' list of manifest.json)
 pytest
+ruff

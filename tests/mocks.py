@@ -1,20 +1,30 @@
 import asyncio
 from typing import Any
 
-from custom_components.eltako.config_helpers import *
-from custom_components.eltako.gateway import EnOceanGateway
+from custom_components.eltako.config.config_helpers import AddressExpression, DEFAULT_GENERAL_SETTINGS
+from custom_components.eltako.core.gateway import EnOceanGateway
+from custom_components.eltako.const import GatewayDeviceType
 class BusMock():
 
     def __init__(self):
         self.fired_events = list()
+        self.listeners = list()
 
-    def fire(self, 
+    def async_listen(self, event_type: str, listener):
+        self.listeners.append((event_type, listener))
+        return lambda: None
+
+    def async_listen_once(self, event_type: str, listener):
+        self.listeners.append((event_type, listener))
+        return lambda: None
+
+    def fire(self,
                 event_type: str,
                 event_data: dict[str, Any] | None = None,
                 origin = None,
                 context = None,
                 ) -> None:
-        
+
         self.fired_events.append({
             'event_type': event_type,
             'event_data': event_data,
@@ -22,15 +32,26 @@ class BusMock():
             'context': context
         })
 
+    # the real event bus has both - Home Assistant itself calls async_fire from callbacks
+    async_fire = fire
+
 class HassMock():
-        
+
     def __init__(self) -> None:
         self.bus = BusMock()
-        self.loop = asyncio.get_event_loop()
+        try:
+            self.loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
 
     # def async_create_task(self, async_call):
     #     asyncio.run( async_call )
-        
+
+    async def async_add_executor_job(self, target, *args):
+        """Run it inline: a test does not need a thread to prove that the call happens."""
+        return target(*args)
+
 class ConfigEntryMock():
 
     def __init__(self):
@@ -58,6 +79,10 @@ class GatewayMock(EnOceanGateway):
 
         self._bus = EltakoBusMock()
 
+        # test_gateway.py replaces EnOceanGateway._init_bus for the whole process, so the
+        # attributes which are normally initialized there have to be provided here.
+        self._received_message_count = 0
+
     def set_status_changed_handler(self):
         pass
 
@@ -75,4 +100,4 @@ class LatestStateMock():
     def __init__(self, state:str=None, attributes:dict[str:str]={}):
         self.state = state
         self.attributes = attributes
-        
+

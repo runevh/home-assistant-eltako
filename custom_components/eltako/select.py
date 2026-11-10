@@ -1,76 +1,28 @@
-"""Support for selecting climate controller priority."""
+"""Support for Eltako light sources."""
 from __future__ import annotations
 
-from eltakobus.util import AddressExpression
-from eltakobus.eep import *
 
-from homeassistant.components.select import SelectEntity
+from eltakobus.util import AddressExpression
+from eltakobus.eep import A5_10_06, EEP
+
+from homeassistant.components.select import (
+    SelectEntity
+)
 from homeassistant import config_entries
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType
 
-from . import config_helpers, get_gateway_from_hass, get_device_config_for_gateway
-from .config_helpers import DeviceConf
-from .device import *
-from .gateway import EnOceanGateway
-from .const import *
+from .config import config_helpers
 
-
-def _get_controller_priority_enum():
-    return getattr(A5_10_06, "ControllerPriority", getattr(A5_10_06, "Controller_Priority", None))
-
-
-def _priority_to_option(priority) -> str | None:
-    if priority is None:
-        return None
-    desc = getattr(priority, "description", None) or getattr(priority, "label", None)
-    if desc:
-        return desc
-    value = getattr(priority, "value", priority)
-    if isinstance(value, tuple) and len(value) > 0 and isinstance(value[-1], str):
-        return value[-1]
-    return getattr(priority, "name", None) or str(value)
-
-
-def _priority_from_option(option: str):
-    enum = _get_controller_priority_enum()
-    if enum is None or option is None:
-        return None
-
-    if hasattr(enum, "find_by_description"):
-        try:
-            found = enum.find_by_description(option)
-            if found is not None:
-                return found
-        except Exception:
-            pass
-
-    for prio in enum:
-        if option == _priority_to_option(prio) or option == getattr(prio, "name", None) or option == str(getattr(prio, "value", None)):
-            return prio
-
-    return None
-
-
-def _priority_options():
-    enum = _get_controller_priority_enum()
-    if enum is None:
-        return []
-    return [_priority_to_option(p) for p in enum]
-
-
-def _default_priority_option():
-    enum = _get_controller_priority_enum()
-    if enum is None:
-        return None
-    if hasattr(enum, "AUTO"):
-        return _priority_to_option(getattr(enum, "AUTO"))
-    options = _priority_options()
-    if options:
-        return options[0]
-    return None
+from .core.integration import get_gateway_from_hass, get_device_config_for_gateway
+from .config.config_helpers import DeviceConf
+from .core.entity import (DeviceInfo, EltakoEntity, RestoreEntity, State, log_entities_to_be_added,
+                          validate_actuators_dev_and_sender_id)
+from .core.gateway import EnOceanGateway, BusBusyError
+from .const import CONF_ROOM_THERMOSTAT, DOMAIN, EVENT_CLIMATE_PRIORITY_SELECTED, LOGGER, MANUFACTURER
 
 
 async def async_setup_entry(
@@ -84,21 +36,28 @@ async def async_setup_entry(
 
     entities: list[EltakoEntity] = []
 
-    platform = Platform.CLIMATE
-    if platform in config:
-        for entity_config in config[platform]:
+    # The configuration of the priority selection is part of the climate section, but the
+    # entities themselves belong to the select platform. (Otherwise they would get an entity id
+    # of the climate domain which collides with the climate entity of the same device.)
+    config_platform = Platform.CLIMATE
+    if config_platform in config:
+        for entity_config in config[config_platform]:
             try:
-                dev_config = None
-                dev_config = DeviceConf(entity_config)
-                if len(_priority_options()) == 0:
-                    LOGGER.warning("[%s %s] Controller priorities not supported by library, skip creating select.", platform, dev_config.id)
-                    continue
-                entities.append(ClimatePriority(platform, gateway, dev_config.id, dev_config.name, dev_config.eep))
+                dev_config = DeviceConf(entity_config, [CONF_ROOM_THERMOSTAT])
+                thermostat = dev_config.get(CONF_ROOM_THERMOSTAT)
 
-            except Exception as e:
-                dev_id = getattr(dev_config, "id", None)
-                LOGGER.warning("[%s %s] Could not load configuration", platform, str(dev_id))
+                # Priority selection is only meaningful when a physical thermostat
+                # competes with the HA software controller.
+                if thermostat:
+                    entities.append(ClimatePriority(Platform.SELECT, gateway, dev_config.id, dev_config.name, dev_config.eep))
+
+            except Exception as e:   # noqa: BLE001 - one bad device configuration must not stop the platform
+                LOGGER.warning("[%s %s] Could not load configuration", config_platform, str(dev_config.id))
                 LOGGER.critical(e, exc_info=True)
+
+    # add for every gateway
+    platform = Platform.SELECT
+    entities.append(RepeaterMode(platform, gateway))
 
     validate_actuators_dev_and_sender_id(entities)
     log_entities_to_be_added(entities, platform)
@@ -106,18 +65,25 @@ async def async_setup_entry(
 
 
 class ClimatePriority(EltakoEntity, SelectEntity, RestoreEntity):
-    """Select controller priority for a climate actuator."""
+    """Defines priority for controlling heating actuators"""
+
+    DEFAULT_PRIO = A5_10_06.ControllerPriority.AUTO.description
 
     def __init__(self, platform: str, gateway: EnOceanGateway, dev_id: AddressExpression, dev_name: str, dev_eep: EEP):
-        super().__init__(platform, gateway, dev_id, dev_name, dev_eep)
+        _dev_name = dev_name
+
+        super().__init__(platform, gateway, dev_id, _dev_name, dev_eep)
 
         self.name = "Priority"
+
         self.event_id = config_helpers.get_bus_event_type(gateway.base_id, EVENT_CLIMATE_PRIORITY_SELECTED, self.dev_id)
 
-        self._attr_options = _priority_options()
-        self._attr_current_option = _default_priority_option()
-        if self._attr_current_option is None and len(self._attr_options) > 0:
-            self._attr_current_option = self._attr_options[0]
+        self._attr_options = [A5_10_06.ControllerPriority.AUTO.description,
+                              A5_10_06.ControllerPriority.HOME_AUTOMATION.description,
+                              A5_10_06.ControllerPriority.THERMOSTAT.description,
+                              A5_10_06.ControllerPriority.LIMIT.description]
+        self._attr_current_option = A5_10_06.ControllerPriority.AUTO.description
+
 
     def load_value_initially(self, latest_state:State):
         LOGGER.debug(f"[{self._attr_ha_platform} {self.dev_id}] latest state - state: {latest_state.state}")
@@ -125,13 +91,13 @@ class ClimatePriority(EltakoEntity, SelectEntity, RestoreEntity):
         try:
             self._attr_current_option = latest_state.state
             if self._attr_current_option in [None, 'unknown']:
-                self._attr_current_option = _default_priority_option()
+                self._attr_current_option = self.DEFAULT_PRIO
 
         except Exception as e:
-            self._attr_current_option = _default_priority_option()
+            self._attr_current_option = self.DEFAULT_PRIO
             raise e
 
-        # send value to initially set value of climate controller
+        ## send value to initially set value of climate controller
         self.hass.bus.fire(self.event_id, { "priority": self._attr_current_option })
 
         self.schedule_update_ha_state()
@@ -146,6 +112,86 @@ class ClimatePriority(EltakoEntity, SelectEntity, RestoreEntity):
         LOGGER.debug(f"[{self._attr_ha_platform} {self.dev_id}] Send event id: '{self.event_id}' data: '{option}'")
 
         self.hass.bus.fire(self.event_id, { "priority": option })
+
+        self._attr_current_option = option
+        self.schedule_update_ha_state()
+
+
+class RepeaterMode(EltakoEntity, SelectEntity, RestoreEntity):
+    """Defines priority for controlling heating actuators"""
+
+    # gateway configuration entity - uses 00-00-00-00 as device id by design
+    _attr_is_actuator_entity = False
+
+    DEFAULT_REPEATER_MODE = "None"
+
+    def __init__(self, platform: str, gateway: EnOceanGateway):
+
+        super().__init__(platform, gateway, dev_id=AddressExpression.parse('00-00-00-00'), dev_name="Repeater_Mode", dev_eep=None)
+
+        self.name = "Repeater Mode"
+
+        self._attr_options = ["None", "Level 1", "Level 2"]
+        self._attr_current_option = "None"
+        self.gateway.add_repeater_mode_change_handler(self.async_receive_bus_update)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.gateway.serial_path)},
+            name= self.gateway.dev_name,
+            manufacturer=MANUFACTURER,
+            model=self.gateway.model,
+            via_device=(DOMAIN, self.gateway.serial_path)
+        )
+
+
+    def load_value_initially(self, latest_state:State):
+        LOGGER.debug(f"[{self._attr_ha_platform} {self.dev_id}] latest state - state: {latest_state.state}")
+        LOGGER.debug(f"[{self._attr_ha_platform} {self.dev_id}] latest state - attributes: {latest_state.attributes}")
+        try:
+            self._attr_current_option = latest_state.state
+            if self._attr_current_option in [None, 'unknown']:
+                self._attr_current_option = self.DEFAULT_REPEATER_MODE
+
+        except Exception as e:
+            self._attr_current_option = self.DEFAULT_REPEATER_MODE
+            raise e
+
+        ## send value to initially set value of climate controller
+        self.gateway.request_repeater_mode()
+
+        self.schedule_update_ha_state()
+
+        LOGGER.debug(f"[{self._attr_ha_platform} {self.unique_id}] value initially loaded: [state: {self.state}]")
+
+
+    async def async_receive_bus_update(self, mode:int) -> None:
+        option = "None"
+        if mode == 1: option = "Level 1"
+        if mode == 2: option = "Level 2"
+
+        self._attr_current_option = option
+        self.schedule_update_ha_state()
+
+
+    async def async_select_option(self, option: str) -> None:
+        """Change the selected option."""
+
+        LOGGER.debug(f"[{self._attr_ha_platform} {self.unique_id}] selected option: {option}")
+
+        level = 0
+        if option == "Level 1": level = 1
+        if option == "Level 2": level = 2
+
+        try:
+            self.gateway.set_repeater_mode(level)
+        except BusBusyError as e:
+            # while a scan or a teach-in has the bus, nothing else may talk on it. The option
+            # keeps its old value so that it shows what the gateway really does.
+            LOGGER.warning(f"[{self._attr_ha_platform} {self.unique_id}] {e}")
+            raise HomeAssistantError(str(e)) from e
 
         self._attr_current_option = option
         self.schedule_update_ha_state()

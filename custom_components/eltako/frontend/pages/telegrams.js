@@ -1,0 +1,612 @@
+/** Live view of all recorded EnOcean telegrams. */
+
+import { WS } from "../lib/api.js";
+import { DETAILS_STYLES, bindDetails, renderCandidates, renderDetails,
+         unknownDetails } from "../lib/details.js";
+import {
+  decodedToText, download, escapeHtml, formatDateTime, formatDecoded, formatNumber, formatTime,
+  icon, matchesFilter, timestampForFilename, toCsv,
+} from "../lib/utils.js";
+import { collectValues, decidesTheFields, descriptorFor, fieldControl, fieldLabel, infoOf,
+         relevantFields } from "../lib/telegram_form.js";
+
+const CSV_COLUMNS = [
+  "seq", "timestamp", "direction", "gateway_id", "gateway_name", "simulated", "msg_type", "org", "address", "local_address",
+  "known", "role", "eep", "device_name", "entity_ids", "area", "status", "data", "raw",
+  "decoded_eep", "decoded_source", "decoded",
+];
+
+// number of decoded values shown per row before the rest is collapsed into a counter
+const VALUE_LIMIT = 8;
+
+/**
+ * What the send form can build.
+ *
+ * The two teach-in telegrams are not value telegrams: they carry no fields, only the address
+ * they are sent from, and they run in opposite directions - a *sensor* announces its profile,
+ * a *sender* asks an ELTAKO actuator to take it into its memory. The backend builds both with
+ * the encoders of the simulation (`build_teach_in_telegrams` in core/websocket.py) and tells the
+ * form in the descriptor which profile has which of them.
+ */
+const SEND_MODES = [
+  { value: "eep", label: "EEP fields" },
+  { value: "teach_in", label: "profile teach-in (sensor announces itself)" },
+  { value: "eltako_teach_in", label: "ELTAKO teach-in (actuator learns the sender)" },
+  { value: "raw", label: "raw ESP2 hex" },
+];
+const TEACH_IN_MODES = ["teach_in", "eltako_teach_in"];
+
+// TODO type check: add /** @type {import("../types.js").Page} */ once the dom casts are in
+export const page = {
+  id: "telegrams",
+  title: "Live telegrams",
+  subtitle: "All EnOcean telegrams received and sent by the configured gateways",
+  icon: "mdi:swap-vertical",
+  glyph: "⇅",
+  needsRecording: true,
+  // the popup of an address which is not configured yet - the same one the device page uses
+  styles: DETAILS_STYLES,
+
+  async load(ctx) {
+    await Promise.all([ctx.loadLogInfo(), ctx.loadRecentTelegrams(), ctx.loadIntegrationInfo()]);
+  },
+
+  /** Called by the shell for every telegram of the live stream. */
+  onTelegram(ctx) {
+    // while the send form is open the list must not re-render - the inputs would lose focus.
+    // The same for the popup of an unknown address: it is being read, and the list below it
+    // would rebuild it with every telegram which arrives.
+    if (ctx.state.paused || ctx.state.sendForm || ctx.state.unknownDetails) return;
+    ctx.requestContentRender();
+  },
+
+  renderStatus(ctx) {
+    const info = ctx.state.logInfo || {};
+    return `
+      <span class="pill ${ctx.state.paused ? "warn" : "on"}">${ctx.state.paused ? "paused" : "live"}</span>
+      <span class="pill">${formatNumber(info.total_count)} total</span>
+      <span class="pill">${formatNumber(info.telegrams_per_minute)} / min</span>
+      ${info.file_logging_enabled
+        ? `<span class="pill" title="${escapeHtml(info.file_path)}${info.file_rotate_after_days
+             ? ` - rotates after ${info.file_rotate_after_days} day${info.file_rotate_after_days === 1 ? "" : "s"}` : ""}">
+             ${formatNumber(info.file_written_count)} written</span>`
+        : `<span class="pill warn" title="Set 'telegram_log_filename' to persist telegrams">memory only</span>`}
+      ${info.timeseries_enabled ? (info.timeseries || {}).last_error
+        ? `<span class="pill warn" title="${escapeHtml((info.timeseries || {}).last_error)}">timeseries error</span>`
+        : `<span class="pill on" title="${escapeHtml((info.timeseries || {}).url || "")} - bucket ${escapeHtml((info.timeseries || {}).bucket || "")}">
+             ${formatNumber((info.timeseries || {}).exported_count)} exported</span>`
+        : ""}
+      ${this._grafanaLink(info)}`;
+  },
+
+  /** Link to the Grafana dashboards - only if a Grafana url is configured. */
+  _grafanaLink(info) {
+    if (!info.timeseries_enabled || !info.grafana_url) return "";
+    return `<a class="pill link" href="${escapeHtml(info.grafana_url)}/dashboards?tag=eltako"
+               target="_blank" rel="noreferrer noopener"
+               title="Analyse the recorded history in Grafana (${escapeHtml(info.grafana_url)})">
+              Grafana &#8599;</a>`;
+  },
+
+  renderToolbar(ctx) {
+    const state = ctx.state;
+    return `
+      <input id="filter" type="search" placeholder="Filter address, device, EEP, entity, data, value&hellip;"
+             value="${escapeHtml(state.telegramFilter)}" />
+      <select id="gateway">
+        <option value="all" ${state.gatewayFilter === "all" ? "selected" : ""}>all gateways</option>
+        ${this._gateways(ctx).map((gw) => `
+          <option value="${escapeHtml(gw.id)}" ${String(state.gatewayFilter) === String(gw.id) ? "selected" : ""}>
+            ${escapeHtml(gw.name)}</option>`).join("")}
+      </select>
+      <select id="direction">
+        <option value="all" ${state.directionFilter === "all" ? "selected" : ""}>all directions</option>
+        <option value="incoming" ${state.directionFilter === "incoming" ? "selected" : ""}>incoming</option>
+        <option value="outgoing" ${state.directionFilter === "outgoing" ? "selected" : ""}>outgoing</option>
+      </select>
+      <label class="check"><input id="only-unknown" type="checkbox" ${state.onlyUnknown ? "checked" : ""}/> only unknown</label>
+      <button id="pause" class="action ${state.paused ? "primary" : ""}">${state.paused ? "Resume" : "Pause"}</button>
+      <span class="spacer"></span>
+      <button id="send-telegram" class="action ${state.sendForm ? "" : "primary"}">
+        ${state.sendForm ? "Close send form" : "Send telegram"}</button>
+      <button id="sync-grafana" class="action"
+              title="Push the dashboards shipped with the integration into the configured Grafana">
+        Sync dashboards</button>
+      <button id="export" class="action">Export CSV</button>
+      <button id="clear" class="action danger">Clear</button>`;
+  },
+
+  bindToolbar(ctx, root) {
+    root.getElementById("filter").addEventListener("input", (event) => {
+      ctx.state.telegramFilter = event.target.value;
+      ctx.requestContentRender(true);
+    });
+    root.getElementById("gateway").addEventListener("change", (event) => {
+      ctx.state.gatewayFilter = event.target.value;
+      ctx.requestContentRender(true);
+    });
+    root.getElementById("direction").addEventListener("change", (event) => {
+      ctx.state.directionFilter = event.target.value;
+      ctx.requestContentRender(true);
+    });
+    root.getElementById("only-unknown").addEventListener("change", (event) => {
+      ctx.state.onlyUnknown = event.target.checked;
+      ctx.requestContentRender(true);
+    });
+    root.getElementById("pause").addEventListener("click", () => {
+      ctx.state.paused = !ctx.state.paused;
+      ctx.requestRender();
+    });
+    const syncGrafana = root.getElementById("sync-grafana");
+    if (syncGrafana) {
+      syncGrafana.addEventListener("click", async () => {
+        syncGrafana.disabled = true;
+        syncGrafana.textContent = "Syncing\u2026";
+        const result = await ctx.api.call(WS.GRAFANA_SYNC);
+        syncGrafana.disabled = false;
+        syncGrafana.textContent = "Sync dashboards";
+        if (!result) {
+          alert((ctx.api.lastError || {}).message || "Sync failed.");
+          ctx.api.lastError = null;
+          return;
+        }
+        const lines = (result.dashboards || []).map((dashboard) =>
+          `${dashboard.success ? "\u2713" : "\u2717"} ${dashboard.title}`
+          + `${dashboard.message ? ` - ${dashboard.message}` : ""}`);
+        alert(result.success
+          ? `${lines.length} dashboard(s) synced to ${result.grafana_url}`
+            + `${result.folder ? ` (folder '${result.folder}')` : ""}:\n\n${lines.join("\n")}`
+          : `${result.error || "Sync failed."}\n\n${lines.join("\n")}`);
+      });
+    }
+
+    root.getElementById("export").addEventListener("click", () => {
+      download(`eltako_telegrams_${timestampForFilename()}.csv`,
+        toCsv(CSV_COLUMNS, this._filtered(ctx)), "text/csv");
+    });
+    root.getElementById("clear").addEventListener("click", async () => {
+      await ctx.api.call(WS.LOG_CLEAR);
+      ctx.state.telegrams = [];
+      await Promise.all([ctx.loadLogInfo(), ctx.loadStatistics()]);
+      ctx.requestRender();
+    });
+    root.getElementById("send-telegram").addEventListener("click", async () => {
+      if (ctx.state.sendForm) {
+        ctx.state.sendForm = null;
+      } else {
+        if (!ctx.state.sendFormDescriptor) {
+          ctx.state.sendFormDescriptor = await ctx.api.call(WS.SEND_TELEGRAM_FORM);
+        }
+        const gateways = (ctx.state.sendFormDescriptor || {}).gateways || [];
+        ctx.state.sendForm = {
+          gatewayId: gateways.length ? gateways[0].id : 0,
+          mode: "eep", eep: "A5-38-08", senderId: "", fields: {}, raw: "",
+          result: null, error: null,
+        };
+      }
+      ctx.requestRender();
+    });
+  },
+
+  render(ctx) {
+    if (ctx.state.logInfo && ctx.state.logInfo.enabled === false) return ctx.renderRecordingDisabled();
+
+    const sendForm = this._renderSendForm(ctx);
+
+    const telegrams = this._filtered(ctx);
+    if (!telegrams.length) {
+      return `${sendForm}${this._renderUnknownDetails(ctx)}<div class="empty">${ctx.state.telegrams.length
+        ? "No telegram matches the current filter."
+        : "Waiting for telegrams&hellip; As soon as a device sends something it shows up here."}</div>`;
+    }
+
+    const rows = telegrams.map((telegram, index) => {
+      const detailId = `telegram-detail-${telegram.seq}-${index}`;
+      const eep = this._eep(telegram);
+      return `
+        <tr data-detail="${detailId}" class="${telegram.known ? "" : "unknown-row"} ${
+              telegram.simulated ? "simulated-row" : ""}">
+          <td class="mono">${formatTime(telegram.timestamp)}</td>
+          <td class="dir ${escapeHtml(telegram.direction)}">${telegram.direction === "outgoing" ? "&#8593; out" : "&#8595; in"}</td>
+          <td>${escapeHtml(telegram.gateway_name || telegram.gateway_id)}
+            ${telegram.simulated
+              ? `<span class="tag simulated" title="This telegram was produced by the simulation - no hardware was involved">simulated</span>` : ""}</td>
+          <td class="mono">${escapeHtml(telegram.address || "-")}
+            ${telegram.local_address && telegram.local_address !== telegram.address
+              ? `<span class="hint">bus ${escapeHtml(telegram.local_address)}</span>` : ""}</td>
+          <td>${telegram.known
+              ? `${escapeHtml(telegram.device_name || "")}
+                 ${telegram.role && telegram.role !== "device" ? `<span class="tag role">${escapeHtml(telegram.role)}</span>` : ""}
+                 ${(telegram.entity_ids || []).length ? `<span class="hint">${escapeHtml(telegram.entity_ids.join(", "))}</span>` : ""}`
+              // an address which is not configured: everything known about it, what it
+              // probably is and the way to add it - one click away instead of another page
+              : `<span class="tag unknown">unknown</span>
+                 <button class="action small" data-unknown-details="${escapeHtml(telegram.address || "")}"
+                   title="What is this address? Everything which was seen, the possible profiles and devices - and add it">
+                   identify&hellip;</button>`}</td>
+          <td class="mono">${escapeHtml(eep.value || "-")}
+            ${eep.hint ? `<span class="hint">${escapeHtml(eep.hint)}</span>` : ""}</td>
+          <td>${escapeHtml(telegram.msg_type)}</td>
+          <td class="mono">${escapeHtml(telegram.data || telegram.payload || "-")}</td>
+          <td class="mono signal" title="Signal strength (only reported by ESP3 transceivers)">
+            ${telegram.rssi_dbm != null ? `${escapeHtml(String(telegram.rssi_dbm))} dBm` : "-"}</td>
+          <td class="decoded">${this._values(telegram, eep)}</td>
+        </tr>
+        <tr class="detail" id="${detailId}"><td colspan="10"><pre>${escapeHtml(JSON.stringify(telegram, null, 2))}</pre></td></tr>`;
+    }).join("");
+
+    return `
+      ${sendForm}
+      ${this._renderUnknownDetails(ctx)}
+      <div class="table-wrapper">
+        <table class="clickable">
+          <thead><tr>
+            <th>Time</th><th>Dir</th><th>Gateway</th><th>Address</th><th>Device / Entity</th>
+            <th>EEP</th><th>Message type</th><th>Data</th><th>Signal</th><th>Values</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="footnote">Showing ${telegrams.length} of ${ctx.state.telegrams.length} buffered telegrams
+        (newest first). Click a row to see the complete record. The buffer size can be changed with
+        <code>telegram_log_buffer_size</code>.</div>`;
+  },
+
+  /**
+   * "What is this address?" - the popup of an unknown telegram.
+   *
+   * A telegram from an address which is not configured is the moment a user meets a new
+   * device: it flashes by in the list and the only way to do anything with it was to
+   * remember the address and look for it on the device page. The popup answers it here -
+   * what was seen, which profiles fit (with the reason and the confidence the backend
+   * derived, see telegram_suggestions.py) and which models of the catalog speak them - and
+   * offers the one action which follows: adding it.
+   */
+  _renderUnknownDetails(ctx) {
+    const address = ctx.state.unknownDetails;
+    if (!address) return "";
+
+    const entry = ((ctx.state.statistics || {}).unknown_devices || [])
+      .find((device) => String(device.address).toUpperCase() === String(address).toUpperCase());
+    const telegram = (ctx.state.telegrams || [])
+      .find((record) => String(record.address || "").toUpperCase() === String(address).toUpperCase());
+    if (!entry && !telegram) return "";
+
+    const best = (entry || {}).suggested || {};
+    const parts = unknownDetails(entry, telegram, {
+      firstSeen: (entry || {}).first_seen ? formatDateTime(entry.first_seen) : null,
+      lastSeen: (entry || {}).last_seen ? formatDateTime(entry.last_seen)
+        : telegram ? formatDateTime(telegram.timestamp) : null,
+    });
+    // the candidates of *this* telegram if they were fetched (see the click handler): the
+    // statistics answer for the last telegram of the address, which is not necessarily the
+    // row the user is looking at
+    if (this._suggestionsFor === address && this._suggestions) {
+      parts.extra = renderCandidates(this._suggestions, { address });
+    }
+    return renderDetails(parts, icon, `
+      <button class="action primary" data-add-unknown="${escapeHtml(address)}|${escapeHtml(best.eep || "")}|${escapeHtml(best.platform || "")}|${escapeHtml(best.hw_type || "")}"
+        >+ Add device</button>`);
+  },
+
+  /** True for the two modes which send a teach-in telegram instead of a value telegram. */
+  _isTeachIn(mode) {
+    return TEACH_IN_MODES.indexOf(mode) >= 0;
+  },
+
+  /**
+   * The profiles which can be sent in this mode.
+   *
+   * Both teach-in modes offer the sender profiles the integration teaches in at all
+   * (`EEP_WITH_TEACH_IN_BUTTONS` in catalog/teach_in.py, published as `teach_in.eltako_eeps`) -
+   * that is what an ELTAKO actuator learns a sender from, and it is the profile a device of
+   * Home Assistant announces. For the profile teach-in it additionally has to be a family which
+   * can announce itself at all.
+   */
+  _eepChoices(descriptor, mode) {
+    const eeps = (descriptor || {}).eeps || [];
+    if (!this._isTeachIn(mode)) return eeps;
+    const isSender = this._senderProfile(descriptor);
+    return eeps.filter((candidate) => isSender(candidate)
+      && (mode === "eltako_teach_in" || candidate.teach_in));
+  },
+
+  /**
+   * Is this a sender profile the integration teaches in?
+   *
+   * The list comes from the backend (`teach_in.eltako_eeps`). A backend which does not send it -
+   * a Home Assistant which was not restarted after an update, so the new frontend talks to the
+   * old python - would leave the dropdown empty; the teach-in payload per profile is the same
+   * table, so that is used instead of showing nothing.
+   */
+  _senderProfile(descriptor) {
+    const named = ((descriptor || {}).teach_in || {}).eltako_eeps;
+    if (named && named.length) return (candidate) => named.indexOf(candidate.eep) >= 0;
+    return (candidate) => Boolean(candidate.eltako_teach_in);
+  },
+
+  /** What the chosen teach-in mode really sends - the texts come from the backend. */
+  _teachInNote(descriptor, mode, eep) {
+    const info = (descriptor || {}).teach_in || {};
+    if (mode === "eltako_teach_in") {
+      return `${escapeHtml(info.eltako_description || "")}
+        ${eep.eltako_teach_in
+          ? `Data bytes of ${escapeHtml(eep.eep)}: <code>${escapeHtml(eep.eltako_teach_in)}</code>.`
+          : ""}`;
+    }
+    return `${escapeHtml(info.profile_description || "")}
+      ${escapeHtml((info.kinds || {})[eep.teach_in] || "")}`;
+  },
+
+  /**
+   * Form to send an arbitrary EnOcean telegram: built from an EEP with its fields, as one of the
+   * two teach-in telegrams of a profile, or as raw ESP2 hex. The live list below shows the sent
+   * telegram right away.
+   */
+  _renderSendForm(ctx) {
+    const form = ctx.state.sendForm;
+    if (!form) return "";
+    const descriptor = ctx.state.sendFormDescriptor || { gateways: [], eeps: [] };
+    const eep = descriptorFor(descriptor, form.eep) || { fields: [], field_info: [] };
+    const teachIn = this._isTeachIn(form.mode);
+    const choices = this._eepChoices(descriptor, form.mode);
+
+    return `
+      <div class="form-card" id="send-form">
+        <h3>Send EnOcean telegram</h3>
+        <div class="form-grid">
+          <div class="field">
+            <label for="send-gateway">Gateway *</label>
+            <select id="send-gateway">
+              ${descriptor.gateways.map((gw) => `
+                <option value="${escapeHtml(gw.id)}" ${String(gw.id) === String(form.gatewayId) ? "selected" : ""}>
+                  ${escapeHtml(gw.name)} (base id ${escapeHtml(gw.base_id || "-")})</option>`).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label for="send-mode">Input *</label>
+            <select id="send-mode">
+              ${SEND_MODES.map((mode) => `
+                <option value="${mode.value}" ${form.mode === mode.value ? "selected" : ""}>
+                  ${escapeHtml(mode.label)}</option>`).join("")}
+            </select>
+          </div>
+          ${form.mode === "raw" ? `
+            <div class="field" style="grid-column: 1 / -1">
+              <label for="send-raw">ESP2 telegram (hex) *</label>
+              <input id="send-raw" class="mono" value="${escapeHtml(form.raw)}"
+                     placeholder="0b 07 00 00 00 09 00 00 b0 05 30  (11 body bytes, or 14 with A5 5A + checksum)" />
+              <span class="field-help">11 body bytes, or the full frame A5 5A &hellip; checksum (checksum is validated).</span>
+            </div>` : `
+            <div class="field">
+              <label for="send-eep">EEP *</label>
+              <select id="send-eep">
+                ${choices.map((candidate) => `
+                  <option value="${escapeHtml(candidate.eep)}" ${candidate.eep === form.eep ? "selected" : ""}>
+                    ${escapeHtml(candidate.description ? `${candidate.eep} - ${candidate.description}`
+                                                       : candidate.eep)}${
+                    teachIn && form.mode === "teach_in" && candidate.teach_in
+                      ? ` (${escapeHtml(String(candidate.teach_in).toUpperCase())})` : ""}</option>`).join("")}
+              </select>
+              ${choices.length
+                // an empty dropdown has to say why - the profiles come from the backend, and a
+                // Home Assistant which was not restarted after an update answers without them
+                ? (eep.description ? `<span class="field-help">${escapeHtml(eep.description)}</span>` : "")
+                : `<span class="field-help">No profile is offered here. The backend does not
+                     report any teach-in profiles - restart Home Assistant so that it serves the
+                     current version of the integration.</span>`}
+            </div>
+            <div class="field">
+              <label for="send-sender">${teachIn ? "Sent from (address) *" : "Sender id *"}</label>
+              <input id="send-sender" class="mono" value="${escapeHtml(form.senderId)}" placeholder="00-00-B0-01" />
+              <span class="field-help">${teachIn
+                ? form.mode === "eltako_teach_in"
+                  ? "The sender address the actuator shall learn - the id Home Assistant switches it with."
+                  : "The address of the device which announces itself."
+                : "Local id for bus gateways, base id + offset for transceivers."}</span>
+            </div>
+            ${teachIn ? `
+              <div class="field" style="grid-column: 1 / -1">
+                <span class="field-help">${this._teachInNote(descriptor, form.mode, eep)}</span>
+              </div>` : `
+              ${relevantFields(eep, form.fields).map((field) => {
+                const info = infoOf(eep, field);
+                return `
+                <div class="field">
+                  <label for="send-field-${escapeHtml(field)}">${fieldLabel(eep, field)}</label>
+                  ${fieldControl(eep, form.fields, field,
+                                 `id="send-field-${escapeHtml(field)}" class="send-field"`)}
+                  ${info.help ? `<span class="field-help">${escapeHtml(info.help)}</span>` : ""}
+                </div>`;
+              }).join("")}
+              ${eep.sendable === false ? `<div class="field" style="grid-column: 1 / -1">
+                <span class="field-help">This profile can only be decoded - the library has no
+                  encoder for it, so no telegram can be built.</span></div>` : ""}`}`}
+        </div>
+        ${form.error ? `<div class="notice warn">${escapeHtml(form.error)}</div>` : ""}
+        ${form.result ? `<div class="notice">Sent${form.result.count > 1
+            ? ` ${form.result.count} telegrams` : ""}: <code>${escapeHtml(form.result.telegram)}</code>
+          <span class="hint mono">${escapeHtml(form.result.hex)}</span></div>` : ""}
+        <div class="form-actions">
+          <button class="action primary" id="send-submit">Send</button>
+          <button class="action" id="send-close">Close</button>
+        </div>
+      </div>`;
+  },
+
+  afterRender(ctx, root) {
+    root.querySelectorAll("tr[data-detail]").forEach((row) => {
+      row.addEventListener("click", () => {
+        const detail = root.getElementById(row.dataset.detail);
+        if (detail) detail.classList.toggle("visible");
+      });
+    });
+
+    // an address which is not configured yet: what is it, and add it
+    root.querySelectorAll("button[data-unknown-details]").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.stopPropagation();                  // the row itself opens the raw record
+        const address = button.dataset.unknownDetails;
+        const telegram = (ctx.state.telegrams || []).find((record) =>
+          String(record.address || "").toUpperCase() === String(address).toUpperCase());
+
+        // two sources: the statistics know how often this address was seen and what it looks
+        // like over time, and the backend reads *this* telegram with every profile which
+        // fits - its values are the evidence which tells the candidates apart
+        await ctx.loadStatistics();
+        const knownFromStatistics = ((ctx.state.statistics || {}).unknown_devices || []).find((record) =>
+          String(record.address || "").toUpperCase() === String(address).toUpperCase());
+        const suggestions = await ctx.api.call(WS.LOG_SUGGESTIONS, {
+          address,
+          data: (telegram || {}).data || null,
+          status: (telegram || {}).status || null,
+          msg_type: (telegram || {}).msg_type || null,
+          // The selected value telegram normally has no teach-in profile itself. The
+          // statistics keep the profile announced by an earlier teach-in for this address.
+          teach_in_profile: (telegram || {}).teach_in_profile
+            || (knownFromStatistics || {}).teach_in_profile || null,
+        });
+        this._suggestionsFor = address;
+        this._suggestions = (suggestions || {}).suggestions || null;
+        ctx.state.unknownDetails = address;
+        ctx.requestContentRender(true);
+      });
+    });
+    bindDetails(root, () => {
+      ctx.state.unknownDetails = null;
+      ctx.requestContentRender(true);
+    });
+
+    // adding it is the job of the device page - it opens its form prefilled with what the
+    // backend suggested (see its `pendingNewDevice` handling)
+    root.querySelectorAll("button[data-add-unknown]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const [address, eep, platform, model] = button.dataset.addUnknown.split("|");
+        ctx.state.unknownDetails = null;
+        ctx.state.pendingNewDevice = { address, eep, platform, name: model || "" };
+        ctx.navigate("devices");
+      });
+    });
+
+    root.querySelectorAll("button[data-add-candidate]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const [address, eep, platform, model] = button.dataset.addCandidate.split("|");
+        ctx.state.unknownDetails = null;
+        ctx.state.pendingNewDevice = { address, eep, platform, name: model || "" };
+        ctx.navigate("devices");
+      });
+    });
+
+    const form = ctx.state.sendForm;
+    if (!form || !root.getElementById("send-form")) return;
+    root.getElementById("send-gateway").addEventListener("change", (event) => {
+      form.gatewayId = event.target.value;
+    });
+    root.getElementById("send-mode").addEventListener("change", (event) => {
+      form.mode = event.target.value;
+      // a teach-in mode offers only the profiles which have such a telegram - the profile which
+      // was chosen before may not be among them anymore
+      const choices = this._eepChoices(ctx.state.sendFormDescriptor, form.mode);
+      if (choices.length && !choices.some((candidate) => candidate.eep === form.eep)) {
+        form.eep = choices[0].eep;
+      }
+      ctx.requestContentRender(true);
+    });
+    root.getElementById("send-eep")?.addEventListener("change", (event) => {
+      form.eep = event.target.value;
+      ctx.requestContentRender(true);
+    });
+    root.getElementById("send-sender")?.addEventListener("input", (event) => { form.senderId = event.target.value; });
+    root.getElementById("send-raw")?.addEventListener("input", (event) => { form.raw = event.target.value; });
+    root.querySelectorAll(".send-field").forEach((input) => {
+      const remember = (event) => { form.fields[input.dataset.field] = event.target.value; };
+      input.addEventListener("input", remember);
+      input.addEventListener("change", (event) => {
+        remember(event);
+        // one field can decide which other fields the profile reads at all (switch or dim)
+        const descriptor = descriptorFor(ctx.state.sendFormDescriptor, form.eep);
+        if (decidesTheFields(descriptor, input.dataset.field)) ctx.requestContentRender(true);
+      });
+    });
+    root.getElementById("send-close").addEventListener("click", () => {
+      ctx.state.sendForm = null;
+      ctx.requestRender();
+    });
+    root.getElementById("send-submit").addEventListener("click", async () => {
+      const payload = { gateway_id: Number(form.gatewayId), mode: form.mode };
+      if (form.mode === "raw") {
+        payload.raw = form.raw;
+      } else if (this._isTeachIn(form.mode)) {
+        // a teach-in carries no values - only the profile and the address it is sent from
+        Object.assign(payload, { sender_id: form.senderId, eep: form.eep });
+      } else {
+        const descriptor = descriptorFor(ctx.state.sendFormDescriptor, form.eep);
+        // only the fields the profile really reads, and the start values for the untouched ones
+        Object.assign(payload, { sender_id: form.senderId, eep: form.eep,
+                                 fields: collectValues(descriptor, form.fields) });
+      }
+      const result = await ctx.api.call(WS.SEND_TELEGRAM, payload);
+      form.result = result;
+      form.error = result ? null : ((ctx.api.lastError || {}).message || "Sending failed.");
+      await ctx.loadRecentTelegrams();
+      ctx.requestContentRender(true);
+    });
+  },
+
+  /**
+   * EEP of a telegram and where it comes from: the configuration of a known device, or the
+   * profile of a 4BS teach-in telegram for a device which is not configured (yet).
+   */
+  _eep(telegram) {
+    if (telegram.eep) return { value: telegram.eep, hint: "", known: true };
+    const profile = telegram.teach_in_profile || telegram.decoded_eep;
+    if (profile) return { value: profile, hint: "from teach-in", known: true };
+    return { value: null, hint: "", known: false };
+  },
+
+  /** Decoded values of a telegram, or a hint why there are none although the EEP is known. */
+  _values(telegram, eep) {
+    const values = formatDecoded(telegram.decoded, VALUE_LIMIT, { skipFalse: false });
+    if (values) return values;
+    if (telegram.teach_in_profile) {
+      return `<span class="hint">teach-in of ${escapeHtml(telegram.teach_in_profile)}</span>`;
+    }
+    // decoded_eep is only set when a decode was actually attempted (it is skipped when
+    // 'telegram_log_decode_eep' is off), so this really points to a mismatching EEP
+    if (telegram.decoded_eep) {
+      return `<span class="hint">cannot be decoded with ${escapeHtml(telegram.decoded_eep)}</span>`;
+    }
+    return "";
+  },
+
+  /** Gateways for the filter: from the integration info, fallback to the recorded telegrams. */
+  _gateways(ctx) {
+    const fromInfo = ((ctx.state.integrationInfo || {}).gateways || [])
+      .map((gw) => ({ id: gw.id, name: gw.name }));
+    if (fromInfo.length) return fromInfo;
+    const seen = new Map();
+    for (const telegram of ctx.state.telegrams) {
+      if (telegram.gateway_id !== undefined && !seen.has(telegram.gateway_id)) {
+        seen.set(telegram.gateway_id, { id: telegram.gateway_id, name: telegram.gateway_name || telegram.gateway_id });
+      }
+    }
+    return [...seen.values()];
+  },
+
+  _filtered(ctx) {
+    const state = ctx.state;
+    return state.telegrams.filter((telegram) => {
+      if (state.gatewayFilter !== "all" && String(telegram.gateway_id) !== String(state.gatewayFilter)) return false;
+      if (state.directionFilter !== "all" && telegram.direction !== state.directionFilter) return false;
+      if (state.onlyUnknown && telegram.known) return false;
+      return matchesFilter(state.telegramFilter, [
+        telegram.address, telegram.local_address, telegram.device_name, telegram.eep, telegram.msg_type,
+        telegram.data, telegram.gateway_name, telegram.simulated ? "simulated" : "",
+        (telegram.entity_ids || []).join(" "),
+        telegram.teach_in_profile, telegram.decoded_eep, decodedToText(telegram.decoded),
+      ]);
+    });
+  },
+};
