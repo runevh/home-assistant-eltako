@@ -33,6 +33,9 @@ Follow [the upstream migration guide](migration-v1-to-v2.2.md) before deployment
 
 Do not start a bus scan or teach-in simply to verify that the panel loads: these
 operations can lock the bus or change actuator configuration.
+Upstream also schedules a first-time bus scan for a connected bus gateway whose
+memory has never been scanned. Plan the initial deployment for an interruption
+to bus control; opening the panel is not the only way a scan can start.
 
 The existing USB disconnects are a separate unresolved issue. This update is not
 evidence that the physical or virtualized USB connection has been repaired.

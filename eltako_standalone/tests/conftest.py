@@ -27,6 +27,15 @@ except RuntimeError:
                 "pytest process: pytest eltako_standalone/tests", allow_module_level=True)
 
 
+@pytest.fixture(autouse=True)
+def short_gateway_setup_timeout(monkeypatch):
+    # These tests use nonexistent serial ports or simulated gateways. Waiting
+    # for a physical gateway to appear only delays each runtime startup; keep
+    # the connection check, with a short timeout for this hardware-free suite.
+    from custom_components.eltako.tools import plug_and_play
+    monkeypatch.setattr(plug_and_play, 'GATEWAY_SETUP_TIMEOUT', 1)
+
+
 CONFIG_YAML = """
 eltako:
   general_settings:
