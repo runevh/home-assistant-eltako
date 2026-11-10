@@ -348,8 +348,12 @@ def get_device_name(dev_name: str, dev_id: AddressExpression, general_config: di
     else:
         return dev_name
 
-def get_id_from_gateway_name(dev_name: str) -> AddressExpression:
-    return int(dev_name.split('(Id: ')[1].split(')')[0])
+def get_id_from_gateway_name(dev_name: str) -> int:
+    """Read both v2 descriptions and v1 entries carrying a BaseId suffix."""
+    match = re.search(r'\(Id:\s*(\d+)(?=\s*[,\)])', dev_name)
+    if match is None:
+        raise ValueError(f"Gateway description has no numeric Id: {dev_name!r}")
+    return int(match.group(1))
 
 
 def get_identifier(gateway_id: int, dev_id: AddressExpression | bytes, event_id:str=None, description_key:str=None) -> str:

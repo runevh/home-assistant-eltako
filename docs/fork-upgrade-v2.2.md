@@ -40,6 +40,18 @@ to bus control; opening the panel is not the only way a scan can start.
 The existing USB disconnects are a separate unresolved issue. This update is not
 evidence that the physical or virtualized USB connection has been repaired.
 
+## Temporary live test, 2026-11-10
+
+The panel registered at `/eltako` and its JavaScript returned HTTP 200 on
+Home Assistant 2026.3.4. Gateway setup failed because the saved v1 description
+contained `(Id: 1, BaseId: ...)`, which the v2 ID parser rejected. The test was
+stopped and v1.5.10 restored, including the original registries. Integration and
+configuration checksums matched the backup, and incoming bus messages resumed.
+
+The ID parser now accepts both description formats, with regression tests.
+This correction has not been retested live. Authenticated visual panel behavior
+and actuator control remain unverified; this was not a successful full migration.
+
 ## Validation
 
 CI runs the integration suite on Python 3.14 with both Home Assistant 2026.3.4
