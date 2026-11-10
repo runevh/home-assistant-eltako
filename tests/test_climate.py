@@ -36,9 +36,9 @@ class EventDataMock():
         self.data = d
 
 def create_climate_entity(thermostat:DeviceConf=None, cooling_switch:DeviceConf=None,
-                          room_sensor: str = None, off_temperature: float = None):
+                          room_sensor: str = None, off_temperature: float = None, address: str = "00-00-00-01"):
     gw = GatewayMock(dev_id=12345)
-    dev_id = AddressExpression.parse("00-00-00-01") # heating cooling actuator
+    dev_id = AddressExpression.parse(address) # heating cooling actuator
     dev_name = "Room 1"
     dev_eep = A5_10_06
     sender_id = AddressExpression.parse("00-00-B0-01")  # home assistant
@@ -183,9 +183,13 @@ class TestClimate(unittest.TestCase):
         self.assertEqual(cc.target_temperature, cc._attr_min_temp)
         self.assertEqual(cc.state, 'off')
 
-    def test_priority_uses_actuator_ack_without_physical_thermostat(self):
-        self.assertEqual(create_climate_entity()._attr_priority,
+    def test_priority_uses_actuator_ack_for_wireless_without_physical_thermostat(self):
+        self.assertEqual(create_climate_entity(address="FF-AA-00-01")._attr_priority,
                          A5_10_06.ControllerPriority.ACTUATOR_ACK)
+
+    def test_priority_uses_auto_for_wired_without_physical_thermostat(self):
+        self.assertEqual(create_climate_entity()._attr_priority,
+                         A5_10_06.ControllerPriority.AUTO)
 
     def test_priority_uses_auto_with_physical_thermostat(self):
         thermostat = DeviceConf({CONF_ID: 'FF-FF-FF-01', CONF_EEP: 'A5-10-06'})
@@ -343,3 +347,29 @@ class TestClimateAsync(unittest.IsolatedAsyncioTestCase):
         await cc.async_handle_cooling_selection(EventDataMock({'cooling': False}))
         self.assertEqual(cc.hvac_mode, HVACMode.HEAT)
         self.assertEqual(cc._get_mode(), HVACMode.HEAT)
+
+
+class TestWiredSetpointCommands(unittest.IsolatedAsyncioTestCase):
+    async def test_unknown_feedback_does_not_corrupt_next_command(self):
+        from eltakobus.message import Regular4BSMessage
+        cc = create_climate_entity()
+        # Actual FAE14SSR status captured during the reported jump-back.
+        status = Regular4BSMessage(cc.dev_id[0], 0x30, bytes.fromhex('004fa20f'), True)
+        cc.value_changed(status)
+        self.assertEqual(cc._attr_actuator_mode, A5_10_06.HeaterMode.NORMAL)
+        with mock.patch.object(cc, 'send_message') as send:
+            await cc.async_set_temperature(temperature=9.5)
+        msg = send.call_args.args[0]
+        self.assertEqual(msg.data[0], A5_10_06.HeaterMode.NORMAL.value)
+        self.assertEqual(msg.data[3], A5_10_06.ControllerPriority.AUTO.code)
+        self.assertAlmostEqual(A5_10_06.decode_message(msg).target_temperature, 9.5, delta=0.2)
+        self.assertEqual(cc.target_temperature, 9.5)
+
+    async def test_explicit_priority_selection_is_preserved(self):
+        cc = create_climate_entity()
+        cc._attr_priority = A5_10_06.ControllerPriority.HOME_AUTOMATION
+        cc._attr_actuator_mode = A5_10_06.HeaterMode.UNKNOWN
+        with mock.patch.object(cc, 'send_message') as send:
+            await cc.async_set_temperature(temperature=20)
+        self.assertEqual(send.call_args.args[0].data[3], A5_10_06.ControllerPriority.HOME_AUTOMATION.code)
+        self.assertEqual(send.call_args.args[0].data[0], A5_10_06.HeaterMode.NORMAL.value)

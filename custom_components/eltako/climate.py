@@ -204,8 +204,9 @@ class ClimateController(EltakoEntity, ClimateEntity, RestoreEntity):
         self._attr_min_temp = min_temp
         # Many A5-10-06 actuators (FTR65HS, FTAF65D, FTR86B, FUTH65D, FUTH55D) only honor
         # priority byte 0x0F (ACTUATOR_ACK). Use it when there is no physical thermostat
-        # so commands from HA actually reach the heater.
-        if self.thermostat is None:
+        # so commands from HA actually reach the heater. Wired bus actuators
+        # retain AUTO, including installations without a separate thermostat.
+        if self.thermostat is None and not self.dev_id.is_local_address():
             self._attr_priority = A5_10_06.ControllerPriority.ACTUATOR_ACK
         else:
             self._attr_priority = A5_10_06.ControllerPriority.AUTO
@@ -368,7 +369,7 @@ class ClimateController(EltakoEntity, ClimateEntity, RestoreEntity):
         new_target_temp = kwargs['temperature']
         LOGGER.debug(f"[climate {self.dev_id}] target temperature changed: to {new_target_temp} (Mode: {self._attr_actuator_mode})")
 
-        if self._attr_actuator_mode in [None, A5_10_06.HeaterMode.OFF]:
+        if self._attr_actuator_mode in [None, A5_10_06.HeaterMode.OFF, A5_10_06.HeaterMode.UNKNOWN]:
             self._attr_actuator_mode = A5_10_06.HeaterMode.NORMAL
 
         self._attr_target_temperature = new_target_temp
@@ -591,7 +592,10 @@ class ClimateController(EltakoEntity, ClimateEntity, RestoreEntity):
 
         if  msg.org == 0x07 and self.dev_eep in [A5_10_06]:
 
-            self._attr_actuator_mode = decoded.mode
+            # A status telegram can omit the operating mode (UNKNOWN). It must
+            # not erase the last usable mode for subsequent control commands.
+            if decoded.mode != A5_10_06.HeaterMode.UNKNOWN:
+                self._attr_actuator_mode = decoded.mode
             LOGGER.debug(f"Decoded mode: {decoded.mode}, target temp: {decoded.target_temperature}, current temp: {decoded.current_temperature}, priority: {decoded.priority.description}")
             self._attr_current_temperature = decoded.current_temperature
 
