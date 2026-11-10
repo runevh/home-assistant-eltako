@@ -35,6 +35,7 @@ class TestGateway(TestCase):
                               dev_id=123, dev_type=sub_type, serial_path="serial_path",  baud_rate=baud_rate, port=None, base_id=AddressExpression.parse('FF-AA-00-00'), dev_name="GW", auto_reconnect=True,
                               config_entry=conf)
 
+        self.assertEqual(gw._message_delay, 0.01)
         self.assertEqual(gw.identifier, basename(normpath('serial_path')))
         self.assertEqual(gw.general_settings, DEFAULT_GENERAL_SETTINGS)
         self.assertEqual(gw.model, "EnOcean Gateway - FAM14")

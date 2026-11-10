@@ -115,7 +115,7 @@ class EnOceanGateway:
         self._bus_task = None
         self.baud_rate = baud_rate
         self._auto_reconnect = auto_reconnect
-        self._message_delay = message_delay
+        self._message_delay = 0.01 if message_delay is None else message_delay
         self.port = port
         self._attr_dev_type = dev_type
         self._attr_serial_path = serial_path

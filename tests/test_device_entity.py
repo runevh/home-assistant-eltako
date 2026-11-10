@@ -75,3 +75,19 @@ class TestEntityProperties(unittest.TestCase):
 
         self.assertEqual(ee._attr_dev_area, "Living Room")
         self.assertEqual(ee.device_info["suggested_area"], "Living Room")
+
+    def test_existing_gateway_uses_supported_device_info_field(self):
+        from homeassistant.helpers.entity import DeviceInfo
+        from homeassistant.helpers.device_registry import DeviceRegistry
+        import inspect
+
+        gateway = GatewayMock()
+        entity = EltakoEntity(Platform.BINARY_SENSOR, gateway,
+                             AddressExpression.parse('FE-34-21-01'), "Switch", F6_02_01)
+        registry = mock.Mock()
+        registry.async_get_device_by_identifier.return_value = mock.Mock(id="gateway-id")
+        with mock.patch("custom_components.eltako.core.entity.dr.async_get", return_value=registry):
+            info = entity.device_info
+        field = "via_device_id" if "via_device_id" in DeviceInfo.__annotations__ else "via_device"
+        self.assertIn(field, info)
+        self.assertTrue(set(info).issubset(inspect.signature(DeviceRegistry.async_get_or_create).parameters))

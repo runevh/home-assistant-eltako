@@ -107,9 +107,9 @@ class EltakoEntity(Entity):
         gateway_device = get_device_by_identifier(
             device_registry, gateway_identifier, getattr(self.gateway, "config_entry_id", None)
         )
-        if gateway_device is not None:
+        if gateway_device is not None and "via_device_id" in DeviceInfo.__annotations__:
             device_info["via_device_id"] = gateway_device.id
-        elif not hasattr(device_registry, "async_get_device_by_identifier"):
+        else:
             # Older Home Assistant versions only support the identifier-based
             # DeviceInfo field. Keep it as a compatibility fallback there.
             device_info["via_device"] = gateway_identifier
