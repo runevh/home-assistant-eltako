@@ -125,6 +125,7 @@ class EnOceanGateway:
         self.general_settings = general_settings
         self._attr_dev_id = dev_id
         self._attr_base_id = base_id
+        self._configured_base_id = base_id
         self.config_entry_id = config_entry.entry_id
 
         self._last_message_received_handler = None
@@ -847,6 +848,20 @@ class EnOceanGateway:
                          self.dev_id, message, e, exc_info=True)
 
 
+    def _accept_reported_base_id(self, reported: AddressExpression) -> bool:
+        """Do not change configured address routing after entities have subscribed."""
+        configured = self._configured_base_id
+        if int.from_bytes(configured[0], 'big') and configured[0] != reported[0]:
+            LOGGER.warning(
+                "[Gateway] [Id: %s] Reported base id %s differs from configured %s; "
+                "keeping the configured address for device feedback routing.",
+                self.dev_id, b2s(reported), b2s(configured),
+            )
+            return False
+        self._attr_base_id = reported
+        self._fire_base_id_change_handlers(self.base_id)
+        return True
+
     def _handle_received_message(self, message:ESP2Message):
         """Process one received telegram. Never call directly, see the callback above."""
 
@@ -862,9 +877,7 @@ class EnOceanGateway:
 
             # received base id
             if message.body[:2] == b'\x8b\x98':
-                LOGGER.debug("[Gateway] [Id: %d] Received base id: %s", self.dev_id, b2s(message.body[2:6]))
-                self._attr_base_id = AddressExpression( (message.body[2:6], None) )
-                self._fire_base_id_change_handlers(self.base_id)
+                self._accept_reported_base_id(AddressExpression((message.body[2:6], None)))
 
             # received repeater mode
             if message.body[:2] == b'\x8b\x99':
